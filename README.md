@@ -62,7 +62,7 @@ pip install -r "Client Side/backend/requirements.txt"
 ### FFmpeg Installation (Windows)
 
 The AI Video Interviewer requires FFmpeg to process candidate audio:
-1.  Download the **Essentials Build** from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
+1.  Download the **Essentials Build** from this direct link: [ffmpeg-release-essentials.zip](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip).
 2.  Extract it and rename the folder to `ffmpeg`.
 3.  Move it to `C:\ffmpeg` so that the path `C:\ffmpeg\bin\ffmpeg.exe` exists.
 4.  Alternatively, add the `bin` folder to your system **PATH**.
