@@ -1,0 +1,143 @@
+# ─────────────────────────────────────────────────────
+# ELEVATR — .gitignore
+# Multi-service monorepo: Next.js · Vite · FastAPI · Flask
+# ─────────────────────────────────────────────────────
+
+# ══ Environment & Secrets (ALL subdirectories) ════════
+# Root
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+
+# Sub-module envs (any depth)
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.development
+**/.env.production
+**/.env.staging
+
+# Secret keys / certs
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# ══ Next.js (port 3000) ══════════════════════════════
+.next/
+out/
+next-env.d.ts
+
+# ══ Vite / React (Client Side, port 8080) ════════════
+Client Side/ai-skill-analyzer-main/dist/
+Client Side/ai-skill-analyzer-main/node_modules/
+Client Side/ai-skill-analyzer-main/.next/
+
+# ══ Node general ══════════════════════════════════════
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+bun.lockb
+package-lock.json
+
+# ══ Python (FastAPI + Flask) ══════════════════════════
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+
+# Virtual environments — ANY name, any depth
+venv/
+env/
+ENV/
+.venv/
+**/.venv/
+**/venv/
+**/env/
+
+*.egg-info/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+*.so
+*.dylib
+
+# Flask / Gunicorn
+instance/
+.webassets-cache
+
+# ══ Build artefacts ═══════════════════════════════════
+dist/
+build/
+*.log
+*.pid
+*.pid.lock
+coverage/
+.nyc_output/
+*.lcov
+.cache/
+.parcel-cache/
+tmp/
+temp/
+
+# ══ OS artefacts ══════════════════════════════════════
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+ehthumbs.db
+
+# ══ Editor / IDE ══════════════════════════════════════
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ══ Supabase local dev ════════════════════════════════
+.supabase/
+supabase/.temp/
+
+# ══ Deployment / hosting configs (not needed) ═════════
+vercel.json
+netlify.toml
+Client Side/ai-skill-analyzer-main/public/_redirects
+Client Side/ai-skill-analyzer-main/public/.htaccess
+**/robots.txt
+
+# ══ Redundant / temp dev scripts ══════════════════════
+rename.js
+replace.py
+replace_script.py
+run_test.bat
+test_import.py
+test_run.js
+check_supabase.js
+check_users.js
+generate_pdfs.py
+
+# ══ Generated PDF / HTML exports ═════════════════════════════
+*.pdf
+# !booklet.pdf
+# !README.pdf
+
+# ══ Large / binary files not needed in repo ═══════════
+*.zip
+*.tar.gz
+*.7z
+
+# ══ Explicitly KEEP these ════════════════════════════
+!scripts/init-storage.js
+!scripts/debug-schema.js
+!start-all.bat
+!booklet.md
+!README.md

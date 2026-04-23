@@ -1,0 +1,82 @@
+Lead Data Engineer responsibilities include managing the data science team, planning projects and building analytics models. You should have a strong problem-solving ability and a knack for statistical analysis. If you’re also able to align our data products with our business goals, we’d like to meet you.
+
+Responsibilities
+
+· Manage a team of data scientists, machine learning engineers and big data specialists
+
+· Lead data mining and collection procedures
+
+· Acquire data from primary or secondary data sources and maintain databases/data systems
+
+· Identify, analyze, and interpret trends or patterns in complex data sets
+
+· Filter and “clean” data by reviewing computer reports, printouts, and performance indicators to locate and correct code problems
+
+· Create and manage data pipeline on cloud platforms – Azure, AWS , GCP
+
+· Ensure data quality and integrity
+
+· Interpret and analyze data problems
+
+· Conceive, plan and prioritize data projects
+
+· Build analytic systems and predictive models
+
+· Test performance of data-driven products
+
+· Visualize data and create reports
+
+· Experiment with new models and techniques
+
+· Align data projects with organizational goals
+
+Requirements and skills
+
+· Proven experience as a Data Scientist or similar role with relevant experience of at least 4 years and total experience 6-8 years.
+
+· Technical expertiseregarding data models, database design development, data mining and segmentation techniques
+
+· Strong knowledge of and experience with reporting packages (Business Objects and likewise), databases, programming in ETL frameworks
+
+· Experience with data movement and management in the Cloud utilizing a combination of Azure or AWS features
+
+· Hands on experience in data visualization tools – Power BI preferred
+
+· Solid understanding of machine learning
+
+· Knowledge of data management and visualization techniques
+
+· A knack for statistical analysis and predictive modeling
+
+· Good knowledge of Python and Matlab
+
+· Experience with SQL and NoSQL databases including ability to write complex queries and procedures
+
+· Strong organizational and leadership skills
+
+· Excellent communication skills
+
+· A business mindset
+
+Degree in Computer Science, Data Science, Mathematics or similar field
+
+Job Type: Full-time
+
+Salary: ₹2,300,000.00 - ₹2,400,000.00 per year
+
+Schedule:
+Day shift
+
+
+
+Experience:
+Data science: 6 years (Preferred)
+Data mining: 6 years (Preferred)
+ETL frameworks: 6 years (Preferred)
+AWS CloudFormation: 6 years (Preferred)
+Azure: 6 years (Preferred)
+Power BI: 6 years (Preferred)
+SQL & NoSQL: 6 years (Preferred)
+
+
+Work Location: In person

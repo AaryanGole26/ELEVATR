@@ -1,0 +1,258 @@
+/* app/hr/pipeline/[id]/pipeline-detail.css */
+
+.pipeline-detail-container {
+  padding: 24px;
+}
+
+.resume-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.resume-modal {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  animation: modalFadeIn 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+.resume-modal-size {
+  max-width: 1000px;
+  width: 95vw;
+  max-height: 90vh;
+}
+
+.evaluation-modal-size {
+  max-width: 1000px;
+  width: 95vw;
+  max-height: 90vh;
+}
+
+.resume-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.evaluation-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.evaluation-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  background: #f8f9fa;
+}
+
+.eval-card {
+  margin-bottom: 24px;
+  padding: 24px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.eval-summary-text {
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0;
+}
+
+.eval-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.eval-strength-card {
+  border-top: 4px solid #10b981;
+}
+
+.eval-weakness-card {
+  border-top: 4px solid #f59e0b;
+}
+
+.eval-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.eval-kpi-item {
+  padding: 16px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border: 1px solid var(--line);
+}
+
+.eval-transcript-container {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.transcript-entry {
+  margin-bottom: 20px;
+  padding-left: 16px;
+}
+
+.transcript-role {
+  font-weight: bold;
+  margin-bottom: 6px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.role-candidate {
+  color: var(--primary-color);
+  border-left: 4px solid var(--primary-color);
+}
+
+.role-ai {
+  color: #495057;
+  border-left: 4px solid #adb5bd;
+}
+
+.transcript-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.finalize-actions-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.btn-reject {
+  color: #e03131;
+  border-color: #ffa8a8;
+  background: #fff5f5;
+}
+
+.btn-reject:hover {
+  background: #fff0f0;
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.btn-delete-cv {
+  border: 1px solid var(--line);
+  background: #fff5f5;
+  color: #e03131;
+}
+
+.btn-delete-cv:hover {
+  background: #fff0f0;
+}
+
+.kpi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.kpi-name {
+  text-transform: capitalize;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.kpi-score {
+  font-weight: bold;
+  color: var(--primary-color);
+  font-size: 16px;
+}
+
+.kpi-feedback {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.notify-candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.inline-email-input {
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  padding: 6px 10px;
+  width: 250px;
+  background: var(--surface-color, #fff);
+  color: var(--text-primary, #111);
+}
+
+.pipeline-header-actions {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resume-modal-meta {
+  margin-bottom: 24px;
+  display: flex;
+  gap: 24px;
+  opacity: 0.8;
+  font-size: 14px;
+}
+
+.resume-pdf-container {
+  margin-bottom: 32px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  height: 600px;
+  background: #f8f9fa;
+}
+
+.resume-iframe {
+  border: none;
+}
+
+.resume-no-pdf-fallback {
+  margin-bottom: 32px;
+  padding: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8f9fa;
+  text-align: center;
+}

@@ -1,0 +1,12 @@
+Server Initialisation in ELEVATR
+
+venv\Scripts\activate
+npm run start-all
+
+HR Creds:
+hr@example.com
+Test@12345
+
+Candidate Creds:
+goleaaryan7@gmail.com
+Aa@123456
