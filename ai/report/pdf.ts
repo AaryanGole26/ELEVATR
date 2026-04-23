@@ -27,8 +27,14 @@ export async function createInterviewReportPdf(input: {
     }
   };
 
-  const drawWrappedText = (text: string, x: number, size: number, maxWidth: number, lineHeight: number, useBold = false, color = rgb(0, 0, 0)) => {
+  const cleanText = (text: string) => {
+    if (!text) return "";
+    return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+  };
+
+  const drawWrappedText = (rawText: string, x: number, size: number, maxWidth: number, lineHeight: number, useBold = false, color = rgb(0, 0, 0)) => {
     const drawFont = useBold ? bold : font;
+    const text = cleanText(rawText);
     const words = (text || "").split(/\s+/).filter(Boolean);
     let line = "";
 
@@ -98,10 +104,10 @@ export async function createInterviewReportPdf(input: {
   y -= 15;
 
   if (audience === "candidate") {
-    page.drawText("Candidate View", { x: 40, y, size: 12, font: bold });
+    page.drawText("Your Interview Report", { x: 40, y, size: 12, font: bold });
     y -= 15;
     drawWrappedText(
-      "This version is intentionally redacted. It keeps your high-level outcome and feedback while omitting the full transcript, detailed scoring breakdown, and internal evaluation notes.",
+      "Below is your complete interview evaluation including your score, feedback, strengths, areas for improvement, and the full transcript of your conversation. Use this for your personal records and future reference.",
       40,
       9,
       515,
@@ -129,7 +135,8 @@ export async function createInterviewReportPdf(input: {
     y -= 40;
   }
 
-  if (audience === "hr" && evaluation.kpis) {
+  // KPI Breakdown - show to all audiences
+  if (evaluation.kpis) {
     page.drawText("KPI Breakdown", { x: 40, y, size: 14, font: bold });
     y -= 25;
 
@@ -152,7 +159,7 @@ export async function createInterviewReportPdf(input: {
 
       page.drawText(`${kpiScore}%`, { x: 270, y, size: 9, font });
 
-      const feedback = (data as any).feedback || "";
+      const feedback = cleanText((data as any).feedback || "");
       page.drawText(feedback.slice(0, 80) + (feedback.length > 80 ? "..." : ""), {
         x: 310,
         y,
@@ -174,7 +181,7 @@ export async function createInterviewReportPdf(input: {
       page.drawText("Key Strengths", { x: 40, y, size: 12, font: bold });
       y -= 15;
       evaluation.strengths.slice(0, 4).forEach(s => {
-        page.drawText(`• ${s}`, { x: 45, y, size: 9, font });
+        page.drawText(`• ${cleanText(s)}`, { x: 45, y, size: 9, font });
         y -= 12;
       });
     }
@@ -186,7 +193,7 @@ export async function createInterviewReportPdf(input: {
       page.drawText("Areas for Improvement", { x: 300, y, size: 12, font: bold });
       y -= 15;
       evaluation.weaknesses.slice(0, 4).forEach(w => {
-        page.drawText(`• ${w}`, { x: 305, y, size: 9, font });
+        page.drawText(`• ${cleanText(w)}`, { x: 305, y, size: 9, font });
         y -= 12;
       });
     }
@@ -202,32 +209,29 @@ export async function createInterviewReportPdf(input: {
     y -= 20;
   }
 
-  if (audience === "candidate") {
-    ensureSpace(100, "What to Expect Next");
-    page.drawText("What to Expect Next", { x: 40, y, size: 12, font: bold });
-    y -= 15;
-    drawWrappedText(
-      "Your hiring team can review the full transcript and scoring details. This summary is the candidate-safe version intended for your records and feedback.",
-      40,
-      9,
-      515,
-      12,
-      false,
-      rgb(0.35, 0.35, 0.35)
-    );
-  } else if (evaluation.transcript && Array.isArray(evaluation.transcript)) {
-    ensureSpace(100, "Interview Transcript Snippet");
-    page.drawText("Interview Transcript Snippet", { x: 40, y, size: 12, font: bold });
+  // Full Interview Transcript - show to all audiences
+  if (evaluation.transcript) {
+    ensureSpace(100, "Full Interview Transcript");
+    page.drawText("Full Interview Transcript", { x: 40, y, size: 12, font: bold });
     y -= 20;
 
-    for (const turn of evaluation.transcript.slice(0, 15)) {
-      ensureSpace(90, "Transcript (continued)");
+    if (Array.isArray(evaluation.transcript)) {
+      for (const turn of evaluation.transcript) {
+        ensureSpace(90, "Transcript (continued)");
 
-      const roleLabel = turn.role === "interviewer" ? "AI:" : "Candidate:";
-      page.drawText(roleLabel, { x: 40, y, size: 9, font: bold });
+        const roleLabel = turn.role === "interviewer" ? "AI:" : "Candidate:";
+        page.drawText(roleLabel, { x: 40, y, size: 9, font: bold });
 
-      drawWrappedText(turn.text || "", 100, 9, 430, 11);
-      y -= 5;
+        drawWrappedText(turn.text || "", 100, 9, 430, 11);
+        y -= 5;
+      }
+    } else if (typeof evaluation.transcript === 'string') {
+      const lines = evaluation.transcript.split('\n');
+      for (const line of lines) {
+        ensureSpace(90, "Transcript (continued)");
+        drawWrappedText(line, 40, 9, 490, 11);
+        y -= 5;
+      }
     }
   }
 

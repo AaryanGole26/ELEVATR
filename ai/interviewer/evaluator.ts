@@ -47,14 +47,18 @@ export async function evaluateInterview(
   jdText: string,
   resumeText: string
 ): Promise<InterviewEvaluation | null> {
+  console.log("[Evaluator] Starting evaluation...");
+  console.log("[Evaluator] API Key available:", !!env.googleApiKey);
+  console.log("[Evaluator] Input sizes - Transcript: " + transcript.length + ", JD: " + jdText.length + ", Resume: " + resumeText.length);
+
   if (!env.googleApiKey) {
-    console.warn("GOOGLE_API_KEY is missing, skipping AI evaluation.");
+    console.warn("[Evaluator] GOOGLE_API_KEY is missing, skipping AI evaluation.");
     return null;
   }
 
   const genAI = await getGenAI();
   if (!genAI) {
-    console.error("AI Evaluation library is not available.");
+    console.error("[Evaluator] AI Evaluation library is not available.");
     return null;
   }
 
@@ -66,9 +70,12 @@ export async function evaluateInterview(
       .replace("{{RESUME_TEXT}}", resumeText)
       .replace("{{TRANSCRIPT}}", transcript);
 
+    console.log("[Evaluator] Sending to Gemini API...");
     const result = await model.generateContent(filledPrompt);
     const response = await result.response;
     const text = response.text();
+
+    console.log("[Evaluator] Gemini response received, length: " + text.length);
 
     // Clean up response text if needed (sometimes Gemini adds ```json block)
     const jsonStr = text.startsWith("```json") 
@@ -76,9 +83,10 @@ export async function evaluateInterview(
       : text;
 
     const evaluation = JSON.parse(jsonStr) as InterviewEvaluation;
+    console.log("[Evaluator] Parsed evaluation - Score: " + evaluation.overallScore + ", Strengths: " + (evaluation.strengths?.length || 0));
     return evaluation;
   } catch (error) {
-    console.error("AI Evaluation failed:", error);
+    console.error("[Evaluator] Evaluation failed:", error);
     return null;
   }
 }

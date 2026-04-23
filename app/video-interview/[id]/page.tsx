@@ -146,7 +146,37 @@ export default function VideoInterviewPage() {
         throw new Error("Failed to hand off interview context to video server.");
       }
 
-      window.open(`${videoInterviewServerUrl}${payload.launch_url}`, "_blank", "noopener,noreferrer");
+      // Open the video server in a new window
+      const newWindow = window.open(`${videoInterviewServerUrl}${payload.launch_url}`, "_blank", "noopener,noreferrer");
+      
+      // Poll for interview completion every 5 seconds for up to 4 hours
+      let pollCount = 0;
+      const maxPolls = 2880; // 4 hours / 5 seconds
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        
+        try {
+          const statusResponse = await fetch(`/api/interviews/${interviewId}/public?token=${encodeURIComponent(token || "")}`);
+          const statusData = await statusResponse.json();
+          
+          if (statusResponse.ok && statusData?.data?.interview?.is_used) {
+            // Interview has been completed - close interval and redirect
+            clearInterval(pollInterval);
+            newWindow?.close();
+            alert("Interview completed! Redirecting to dashboard to view your application status.");
+            setTimeout(() => {
+              router.push("/dashboard");
+            }, 1000);
+            return;
+          }
+        } catch (err) {
+          // Silent fail on polling - just continue
+        }
+        
+        if (pollCount >= maxPolls) {
+          clearInterval(pollInterval);
+        }
+      }, 5000);
     } catch {
       window.open(`${videoInterviewServerUrl}/`, "_blank", "noopener,noreferrer");
     }

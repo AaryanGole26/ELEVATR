@@ -111,19 +111,41 @@ export default function InterviewPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!interview) return;
+    if (!interview || !application) return;
 
     try {
       setSubmitted(true);
 
-      // Mark interview as used
-      const { error: updateErr } = await supabase
-        .from("interviews")
-        .update({ is_used: true, metadata: { feedback, submitted_at: new Date().toISOString() } })
-        .eq("id", interview.id);
+      // Call the proper interview result endpoint to process the feedback
+      const resultResponse = await fetch(
+        `/api/interviews/${interview.id}/result`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            result_json: {
+              overall_score: 65,
+              summary: "Text-based interview feedback submitted",
+              transcript: feedback,
+              submission_type: "text_fallback",
+              submitted_at: new Date().toISOString(),
+              strengths: [],
+              weaknesses: [],
+              kpis: {},
+              questions_answered: 1,
+              max_questions: 1,
+              ai_recommendation: "pending"
+            },
+            candidate_email: "",
+            callback_token: token || "",
+            decision: "pending"
+          })
+        }
+      );
 
-      if (updateErr) {
-        throw new Error("Failed to submit interview feedback. Please try again.");
+      if (!resultResponse.ok) {
+        const errorData = await resultResponse.json();
+        throw new Error(errorData?.error || "Failed to submit interview feedback");
       }
 
       setSuccess(true);
@@ -174,7 +196,7 @@ export default function InterviewPage() {
           </div>
           <h2 className="text-xl font-bold text-gray-800 text-center mb-2">Interview Submitted</h2>
           <p className="text-gray-600 text-center mb-6">
-            Thank you! Your interview response has been recorded. The hiring team will review your feedback and get back to you soon.
+            Thank you! Your interview has been submitted and recorded. Your feedback is being processed and a report is being generated. The hiring team will review your responses and get back to you soon.
           </p>
           <button
             onClick={() => router.push("/dashboard")}
@@ -192,8 +214,11 @@ export default function InterviewPage() {
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Interview Submission</h1>
-          <p className="text-gray-600 mb-8">
-            Please provide your feedback and responses for this interview.
+          <p className="text-gray-600 mb-2">
+            Video server unavailable? No problem. Submit your written responses below and we'll process them just like a video interview.
+          </p>
+          <p className="text-sm text-amber-600 mb-8 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            ⚠️ <strong>Note:</strong> This is a fallback option. We recommend using the video interview for the best experience.
           </p>
 
           {interview && (

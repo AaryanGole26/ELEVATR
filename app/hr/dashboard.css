@@ -2,12 +2,19 @@
 
 .dashboard-grid {
   display: grid;
-  gap: 24px;
+  gap: 16px;
   grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .dashboard-grid {
+    gap: 20px;
+  }
 }
 
 @media (min-width: 1024px) {
   .dashboard-grid {
+    gap: 24px;
     grid-template-columns: 2fr 1fr;
   }
 }
@@ -24,8 +31,14 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 20px;
+  padding: 16px;
   animation: fadeIn 0.2s ease-out;
+}
+
+@media (min-width: 640px) {
+  .modal-overlay {
+    padding: 20px;
+  }
 }
 
 .modal-content {
@@ -43,7 +56,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 16px;
   border-bottom: 1px solid var(--line-color);
   background: #fff;
   position: sticky;
@@ -51,20 +64,45 @@
   z-index: 10;
 }
 
+@media (min-width: 640px) {
+  .modal-header {
+    padding: 20px 24px;
+  }
+}
+
 .modal-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
+}
+
+@media (min-width: 640px) {
+  .modal-header h2 {
+    font-size: 20px;
+  }
 }
 
 .modal-body {
-  padding: 24px;
+  padding: 16px;
+}
+
+@media (min-width: 640px) {
+  .modal-body {
+    padding: 24px;
+  }
 }
 
 .evaluation-score-card {
-  padding: 30px;
+  padding: 20px;
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   border: none;
+}
+
+@media (min-width: 640px) {
+  .evaluation-score-card {
+    padding: 30px;
+    margin-bottom: 24px;
+  }
 }
 
 .score-main {
@@ -74,52 +112,100 @@
 }
 
 .score-label {
-  font-size: 14px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   opacity: 0.9;
   margin-bottom: 8px;
 }
 
+@media (min-width: 640px) {
+  .score-label {
+    font-size: 14px;
+  }
+}
+
 .score-value {
-  font-size: 64px;
+  font-size: 48px;
   font-weight: 800;
   line-height: 1;
 }
 
+@media (min-width: 640px) {
+  .score-value {
+    font-size: 64px;
+  }
+}
+
 .evaluation-section {
-  margin-bottom: 32px;
+  margin-bottom: 20px;
+}
+
+@media (min-width: 640px) {
+  .evaluation-section {
+    margin-bottom: 32px;
+  }
 }
 
 .evaluation-section h3 {
-  font-size: 16px;
-  margin-bottom: 16px;
+  font-size: 14px;
+  margin-bottom: 12px;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+@media (min-width: 640px) {
+  .evaluation-section h3 {
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
 }
 
 .transcript-box {
   background: #f8fafc;
   border: 1px solid var(--line-color);
   border-radius: 12px;
-  padding: 20px;
-  font-size: 14px;
+  padding: 14px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--text-primary);
   max-height: 400px;
   overflow-y: auto;
 }
 
+@media (min-width: 640px) {
+  .transcript-box {
+    padding: 20px;
+    font-size: 14px;
+  }
+}
+
 .evaluation-actions {
-  margin-top: 32px;
+  margin-top: 20px;
   display: flex;
   justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 640px) {
+  .evaluation-actions {
+    margin-top: 32px;
+    gap: 16px;
+  }
 }
 
 .btn-xs {
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+@media (min-width: 640px) {
+  .btn-xs {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
 }
 
 .records-header {
@@ -128,10 +214,18 @@
   align-items: center;
   cursor: pointer;
   user-select: none;
+  gap: 12px;
 }
 
 .records-content {
-  margin-top: 24px;
-  padding-top: 24px;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid var(--line-color);
+}
+
+@media (min-width: 640px) {
+  .records-content {
+    margin-top: 24px;
+    padding-top: 24px;
+  }
 }

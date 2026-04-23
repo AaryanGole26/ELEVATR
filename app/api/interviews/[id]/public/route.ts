@@ -38,6 +38,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       .eq("id", interview.application_id)
       .maybeSingle();
 
+    // Check if interview has already been used
+    if (interview.is_used) {
+      throw new Error("This interview link has already been used and cannot be accessed again. Please contact the hiring team if you need to retake the interview.");
+    }
+
     if (application?.status === "rejected") {
       throw new Error("This interview link is no longer active as your application status has been updated. Please contact the hiring team for more information.");
     }
