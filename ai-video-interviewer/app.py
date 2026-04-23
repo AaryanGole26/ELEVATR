@@ -1,4 +1,5 @@
 import flask
+import random
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from gradio_client import Client, handle_file
@@ -233,19 +234,49 @@ def generate_fallback_question(session_data, user_response_text):
             break
 
     if not topic:
-        answer_topics = extract_priority_topics(user_response_text, top_n=4)
-        answer_keywords = extract_keywords(user_response_text, top_n=5)
-        topic = (answer_topics + answer_keywords + [""])[0]
+        # Pull context from stored resume + JD text for richer extraction
+        resume_text = session_data.get("resume_text", "")
+        job_desc = session_data.get("job_desc", "")
+        combined_ctx = (resume_text + "\n" + job_desc + "\n" + user_response_text).strip()
+        answer_topics = extract_priority_topics(combined_ctx, top_n=5)
+        answer_keywords = extract_keywords(combined_ctx, top_n=8)
+        # Prefer uncovered topics
+        all_candidates = answer_topics + answer_keywords
+        topic = next((t for t in all_candidates if t not in covered_topics), (all_candidates + [""])[0])
+        if topic:
+            covered_topics.append(topic)
 
     templates = [
         "Can you walk me through a project where {topic} was central, including your exact ownership and final outcome?",
         "When using {topic}, what trade-offs did you evaluate and how did you validate that your approach was effective?",
         "Tell me about a challenging moment in your {topic} work and how you debugged or improved the solution.",
         "How did your {topic} work influence business metrics, and what would you improve if you repeated that project today?",
+        "What specific tools or libraries did you use for {topic}, and why did you choose them over alternatives?",
+        "Walk me through the architecture or design decisions you made when working with {topic}.",
+        "How did you measure success or correctness in your {topic} implementation?",
+        "If a junior engineer asked you to explain {topic} from scratch, what key concepts would you start with?",
+        "Describe a time when your {topic} solution didn't work as expected — what did you learn from that?",
+        "How did you stay current with best practices in {topic}, and did those practices influence your work?",
+        "What was the biggest scalability or performance challenge you faced while working with {topic}?",
+        "How did you collaborate with your team when {topic} was a shared responsibility?",
+        "If you were to redo your {topic} project with no constraints, what would you change and why?",
+        "What assumptions did you make early on about {topic} that turned out to be wrong?",
+        "How did stakeholder requirements shape the way you approached {topic} in that project?",
     ]
-    fallback_counter = session_data.get("fallback_counter", 0)
-    template = templates[fallback_counter % len(templates)]
-    session_data["fallback_counter"] = fallback_counter + 1
+
+    # Pick a random template that hasn't been used recently
+    used_templates = session_data.setdefault("used_templates", [])
+    unused = [t for t in templates if t not in used_templates]
+    if not unused:
+        # All used — reset and start fresh
+        used_templates.clear()
+        unused = templates[:]
+    template = random.choice(unused)
+    used_templates.append(template)
+    # Keep memory bounded
+    if len(used_templates) > len(templates):
+        used_templates.pop(0)
+    session_data["fallback_counter"] = session_data.get("fallback_counter", 0) + 1
 
     if topic:
         return template.format(topic=topic)
