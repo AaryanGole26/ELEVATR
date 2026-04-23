@@ -131,6 +131,7 @@ generate_pdfs.py
 # !README.pdf
 
 # ══ Large / binary files not needed in repo ═══════════
+*.mp4
 *.zip
 *.tar.gz
 *.7z

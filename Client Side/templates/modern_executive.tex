@@ -1,0 +1,40 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\definecolor{accentblue}{RGB}{31, 73, 125}
+\definecolor{lightgray}{RGB}{89, 89, 89}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\newcommand{\SectionTitle}[1]{{\Large\textbf{\textcolor{accentblue}{#1}}}\\\[3pt\]}
+\newcommand{\SubTitle}[1]{{\textbf{#1}}}
+
+\begin{document}
+
+{\fontsize{24pt}{26pt}\selectfont\textbf{$name$}} \\[2pt]
+{\small $email$ \quad|\quad $phone$ \quad|\quad $location$ \quad $website$} \\[12pt]
+\hrulefill \\[8pt]
+
+$summary$ \\[12pt]
+
+\SectionTitle{WORK EXPERIENCE}
+$work_experience$
+
+\SectionTitle{EDUCATION}
+$education$
+
+\SectionTitle{TECHNICAL SKILLS}
+$skills$
+
+\SectionTitle{PROJECTS}
+$projects$
+
+\SectionTitle{CERTIFICATIONS}
+$certifications$
+
+\end{document}
+

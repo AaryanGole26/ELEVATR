@@ -1,0 +1,60 @@
+% Template 1 - Modern Gradient Design with Colorful Accents
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tikz}
+
+\definecolor{accent1}{RGB}{99, 102, 241}
+\definecolor{accent2}{RGB}{139, 92, 246}
+\definecolor{darktext}{RGB}{30, 30, 30}
+\definecolor{subtlegray}{RGB}{107, 114, 128}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\newcommand{\SectionHeaderStyle}[1]{{%
+  \vspace{8pt}%
+  {\Large\bfseries\textcolor{accent1}{#1}}%
+  \vspace{2pt}%
+  \noindent\textcolor{accent1}{\rule{\textwidth}{2pt}}%
+  \vspace{6pt}
+}}
+
+\newcommand{\JobTitleStyle}[2]{{\textbf{\textcolor{accent2}{#1}} \hfill \textit{\small\textcolor{subtlegray}{#2}}}}
+
+\begin{document}
+
+% Header with decorative elements
+\begin{center}
+{\fontsize{32pt}{36pt}\selectfont\bfseries\textcolor{darktext}{$name$}}\\[3pt]
+{\normalsize\textcolor{subtlegray}{$email$ \quad $phone$ \quad $location$}}\\[2pt]
+{\small\textcolor{subtlegray}{$website$ $linkedin$ $github$}}
+\end{center}
+
+\vspace{10pt}
+{\noindent\textcolor{accent1}{\rule{\textwidth}{0.5pt}}}
+\vspace{8pt}
+
+\SectionHeaderStyle{Professional Summary}
+$summary$
+
+\SectionHeaderStyle{Work Experience}
+$work_experience$
+
+\SectionHeaderStyle{Education}
+$education$
+
+\SectionHeaderStyle{Skills}
+$skills$
+
+\SectionHeaderStyle{Projects}
+$projects$
+
+\SectionHeaderStyle{Certifications}
+$certifications$
+
+\end{document}
+

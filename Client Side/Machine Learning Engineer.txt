@@ -1,0 +1,12 @@
+Role: Machine Learning Engineer
+
+Responsibilities:
+• Train and deploy DL models (PyTorch/TensorFlow)
+• Build MLOps pipelines (data/versioning, CI/CD, monitoring)
+• Optimize inference with ONNX/TensorRT; serve with FastAPI
+
+Requirements:
+• Experience with cloud deployment (AWS/GCP) and Docker/K8s
+• Strong Python engineering and testing
+
+Tech Stack Keywords: PyTorch, TensorFlow, FastAPI, ONNX, TensorRT, Docker, Kubernetes, AWS/GCP, MLflow, Airflow

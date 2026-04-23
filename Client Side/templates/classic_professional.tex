@@ -1,0 +1,48 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\definecolor{darkgray}{RGB}{51, 51, 51}
+\definecolor{lightgray}{RGB}{128, 128, 128}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\pagestyle{empty}
+
+\newcommand{\Name}[1]{{\fontsize{18pt}{20pt}\selectfont\textbf{#1}}}
+\newcommand{\Section}[1]{{\textbf{\textcolor{darkgray}{\large #1}}\\\textcolor{darkgray}{\hrulefill}\\}}
+\newcommand{\JobEntry}[2]{{\textbf{#1} \hfill \textit{#2}\\}}
+
+\begin{document}
+
+\centerline{\Name{$name$}}
+\centerline{\small $email$ | $phone$ | $location$ | $website$}
+{
+\vspace{6pt}
+\Section{OBJECTIVE}
+$summary$
+}
+
+{\Section{PROFESSIONAL EXPERIENCE}
+$work_experience$
+}
+
+{\Section{EDUCATION}
+$education$
+}
+
+{\Section{COMPETENCIES}
+$skills$
+}
+
+{\Section{PROJECTS}
+$projects$
+}
+
+{\Section{CERTIFICATIONS}
+$certifications$
+}
+
+\end{document}
+

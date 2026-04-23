@@ -1,0 +1,48 @@
+% Bill Ryan Basic - Clean Traditional Resume
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\definecolor{primary}{RGB}{44, 62, 80}
+
+\setlist[itemize]{leftmargin=*}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\newcommand{\SectionTitle}[1]{{\large\bfseries\textcolor{primary}{#1}}\\\noindent\rule{\textwidth}{1pt}\\}
+\newcommand{\JobEntry}[2]{{\textbf{#1}} \hfill \textit{\small#2}\\}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries\textcolor{primary}{$name$}}\\[4pt]
+  {\small\textcolor{primary}{$email$ \quad $phone$ \quad $location$}} \\[2pt]
+  {\small\textcolor{primary}{$linkedin$ $github$ $website$}}
+\end{center}
+
+\vspace{8pt}
+
+\section*{\SectionTitle{Professional Summary}}
+$summary$
+
+\section*{\SectionTitle{Experience}}
+$work_experience$
+
+\section*{\SectionTitle{Education}}
+$education$
+
+\section*{\SectionTitle{Skills}}
+$skills$
+
+\section*{\SectionTitle{Projects}}
+$projects$
+
+\section*{\SectionTitle{Certifications}}
+$certifications$
+
+\end{document}
+
+

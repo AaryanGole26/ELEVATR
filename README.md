@@ -33,20 +33,29 @@ HR teams create JD-based pipelines → bulk-screen resumes using AI scores → s
 ### Clone & Install
 
 ```bash
-# Install Next.js deps
-npm install
+# 1. Clone the repository
+git clone https://github.com/AaryanGole26/ELEVATR.git
+cd ELEVATR
 
-# Install Vite client deps
-cd "Client Side/ai-skill-analyzer-main"
-npm install
+# 2. Install all dependencies (Root, Client, and Python)
+npm run install-all
+```
 
-# Python deps — FastAPI
-cd "Client Side/backend"
-pip install -r requirements.txt
+> [!TIP]
+> I've added a helper script in `package.json` to install everything at once.
 
-# Python deps — Flask
-cd ../../ai-video-interviewer
-pip install -r requirements.txt
+### Python Environment Setup
+
+We recommend using a single virtual environment in the root for both Python services:
+
+```bash
+# Create venv in root
+python -m venv venv
+source venv/bin/activate  # Windows: .\venv\Scripts\activate
+
+# Install requirements for all services
+pip install -r ai-video-interviewer/requirements.txt
+pip install -r "Client Side/backend/requirements.txt"
 ```
 
 ### Configure Environment

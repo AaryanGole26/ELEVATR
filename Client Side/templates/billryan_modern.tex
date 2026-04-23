@@ -1,0 +1,38 @@
+% Inspired by billryan/resume (MIT). Minimal XeLaTeX-friendly look.
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\definecolor{primary}{HTML}{2C3E50}
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0pt}{}[\titlerule]
+
+\begin{document}
+\begin{center}
+  {\Huge\bfseries\color{primary} $name$}\\[4pt]
+  {\color{primary}$email$ \textbar\ $phone$ \textbar\ $location$}\\[2pt]
+  {\color{primary}$linkedin$ $github$ $website$}
+\end{center}
+
+\vspace{6pt}
+\section*{Professional Summary}
+$summary$
+
+\section*{Work Experience}
+$work_experience$
+
+\section*{Education}
+$education$
+
+\section*{Skills}
+$skills$
+
+\section*{Projects}
+$projects$
+
+\section*{Certifications}
+$certifications$
+
+\end{document}
+
+

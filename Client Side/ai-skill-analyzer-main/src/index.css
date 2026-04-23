@@ -1,0 +1,136 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 226 50% 97%; /* #f3f6fc equivalent */
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 60%; /* #3b82f6 equivalent */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 213 94% 96%;
+    --secondary-foreground: 217 91% 60%;
+
+    --muted: 220 13% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 217 91% 95%;
+    --accent-foreground: 217 91% 60%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* ELEVATR Special Gradients & Shadows */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(239 84% 67%));
+    --gradient-hero: linear-gradient(135deg, #0f172a 0%, #3b82f6 100%);
+    --gradient-card: rgba(255, 255, 255, 0.75);
+    
+    --shadow-card: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    --shadow-elevated: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-glow: 0 0 15px rgba(59, 130, 246, 0.4);
+
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-image: 
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 30%),
+      radial-gradient(circle at bottom right, rgba(99, 102, 241, 0.08), transparent 30%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+    font-family: 'Outfit', 'Inter', sans-serif;
+  }
+
+  .hero-text {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .card-elevated {
+    background: var(--gradient-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-card);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    transition: var(--transition-smooth);
+    border-radius: var(--radius);
+  }
+
+  .card-elevated:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated), 0 0 20px rgba(255,255,255,0.4);
+  }
+
+  .btn-gradient {
+    background: var(--gradient-primary);
+    color: white;
+    transition: var(--transition-smooth);
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.2);
+    border-radius: var(--radius);
+  }
+
+  .btn-gradient:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(59, 130, 246, 0.3);
+  }
+
+  .progress-bar {
+    background: var(--gradient-primary);
+    transition: width 1s ease-in-out;
+  }
+
+  /* Marquee Animation */
+  .marquee {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .marquee__track {
+    display: inline-flex;
+    animation: marquee 30s linear infinite;
+  }
+
+  .marquee__track.delayed {
+    animation: marquee 30s linear infinite;
+    animation-delay: -15s;
+  }
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .marquee:hover .marquee__track {
+    animation-play-state: paused;
+  }
+}
