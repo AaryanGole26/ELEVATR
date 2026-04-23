@@ -28,6 +28,7 @@ HR teams create JD-based pipelines → bulk-screen resumes using AI scores → s
 
 - Node.js 18+
 - Python 3.11+
+- **FFmpeg** (Required for AI Video Interviewer audio processing)
 - A Supabase project
 
 ### Clone & Install
@@ -54,9 +55,17 @@ python -m venv venv
 source venv/bin/activate  # Windows: .\venv\Scripts\activate
 
 # Install requirements for all services
-pip install -r ai-video-interviewer/requirements.txt
+pip install -r "ai-video-interviewer/requirements.txt"
 pip install -r "Client Side/backend/requirements.txt"
 ```
+
+### FFmpeg Installation (Windows)
+
+The AI Video Interviewer requires FFmpeg to process candidate audio:
+1.  Download the **Essentials Build** from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
+2.  Extract it and rename the folder to `ffmpeg`.
+3.  Move it to `C:\ffmpeg` so that the path `C:\ffmpeg\bin\ffmpeg.exe` exists.
+4.  Alternatively, add the `bin` folder to your system **PATH**.
 
 ### Configure Environment
 
