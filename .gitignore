@@ -11,6 +11,10 @@
 .env.development
 .env.production
 .env.staging
+.envrc
+*.secret
+*.secrets
+*.credentials
 
 # Sub-module envs (any depth)
 **/.env
@@ -19,6 +23,7 @@
 **/.env.development
 **/.env.production
 **/.env.staging
+**/.envrc
 
 # Secret keys / certs
 *.pem
@@ -26,6 +31,15 @@
 *.cert
 *.p12
 *.pfx
+
+# Local model / checkpoint artifacts
+models/
+checkpoints/
+*.onnx
+*.safetensors
+*.tflite
+*.pt
+*.pth
 
 # ══ Next.js (port 3000) ══════════════════════════════
 .next/
@@ -83,10 +97,20 @@ build/
 coverage/
 .nyc_output/
 *.lcov
+.coverage
+coverage.xml
+htmlcov/
 .cache/
 .parcel-cache/
+.turbo/
+.vite/
+.vercel/
 tmp/
 temp/
+reports/
+uploads/
+generated/
+artifacts/
 
 # ══ OS artefacts ══════════════════════════════════════
 .DS_Store
@@ -98,6 +122,14 @@ ehthumbs.db
 
 # ══ Editor / IDE ══════════════════════════════════════
 .vscode/settings.json
+.history/
+
+# ══ Python tooling ════════════════════════════════════
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+__pypackages__/
 .vscode/launch.json
 .idea/
 *.sublime-project
@@ -140,5 +172,4 @@ generate_pdfs.py
 !scripts/init-storage.js
 !scripts/debug-schema.js
 !start-all.bat
-!booklet.md
 !README.md
