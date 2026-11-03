@@ -2,22 +2,23 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit, parseRequestBody } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, assertUuid, rateLimit, parseRequestBody, getClientIp } from "@/shared/api-utils";
+import { APPLICATION_STATUSES } from "@/shared/types";
+
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
 const updateApplicationSchema = z.object({
-  application_id: z.string().uuid("Invalid application ID"),
-  status: z.enum(["pending", "screened", "shortlisted", "interview", "rejected", "selected"], {
-    errorMap: () => ({ message: "Invalid status. Must be one of: pending, screened, shortlisted, interview, rejected, selected" })
+  status: z.enum(APPLICATION_STATUSES, {
+    errorMap: () => ({ message: `Invalid status. Must be one of: ${APPLICATION_STATUSES.join(", ")}` })
   }),
-  feedback: z.string().optional(),
-  notes: z.string().max(1000).optional(),
-  score: z.number().min(0).max(100).optional()
+  score: z.number().int().min(0).max(100).optional()
 });
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`updateApp:${ip}`, 30, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -29,6 +30,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const { id: applicationId } = await context.params;
+    assertUuid(applicationId, "Application");
 
     // Parse and validate request body
     const body = await parseRequestBody(request);
@@ -40,14 +42,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       });
     }
 
-    const { status, feedback, notes, score } = parsed.data;
+    const { status, score } = parsed.data;
 
     // Fetch application and verify HR owns the pipeline
     const { data: application, error: fetchErr } = await supabaseAdmin
       .from("applications")
       .select("id, pipeline_id, status, candidate_id")
       .eq("id", applicationId)
-      .single();
+      .maybeSingle();
 
     if (fetchErr || !application) {
       throw new APIError(404, "Application not found.");
@@ -59,14 +61,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .select("id, hr_id")
       .eq("id", application.pipeline_id)
       .eq("hr_id", guard.user.id)
-      .single();
+      .maybeSingle();
 
     if (pipelineErr || !pipeline) {
       throw new APIError(403, "You don't have permission to update this application.");
     }
 
     // Update application
-    const updateData: Record<string, any> = {
+    const updateData: Record<string, unknown> = {
       status
     };
 
@@ -85,18 +87,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       throw new APIError(500, "Failed to update application", {
         details: updateErr?.message
       });
-    }
-
-    // Send email notification if status changed
-    if (application.status !== status) {
-      try {
-        // Email notifications would be sent here
-        // For now, this is a placeholder - integrate with your email service
-        console.log(`Status changed to ${status} for application ${application.id}`);
-      } catch (emailErr) {
-        console.error("Email notification failed:", emailErr);
-        // Don't fail the request if email fails
-      }
     }
 
     return apiResponse(
@@ -118,7 +108,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`getApp:${ip}`, 50, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -130,13 +120,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const { id: applicationId } = await context.params;
+    assertUuid(applicationId, "Application");
 
     // Fetch application
     const { data: application, error: fetchErr } = await supabaseAdmin
       .from("applications")
       .select("id, pipeline_id, candidate_id, resume_id, status, score, created_at")
       .eq("id", applicationId)
-      .single();
+      .maybeSingle();
 
     if (fetchErr || !application) {
       throw new APIError(404, "Application not found.");
@@ -148,7 +139,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       .select("id, hr_id")
       .eq("id", application.pipeline_id)
       .eq("hr_id", guard.user.id)
-      .single();
+      .maybeSingle();
 
     if (pipelineErr || !pipeline) {
       throw new APIError(403, "You don't have permission to access this application.");
@@ -159,7 +150,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       .from("resumes")
       .select("id, content, metadata")
       .eq("id", application.resume_id)
-      .single();
+      .maybeSingle();
 
     const { data: user } = await supabaseAdmin
       .from("users")

@@ -9,8 +9,10 @@ Extracts job title and description from job listing URLs using a multi-layer str
 This module safely extracts job data without being rate-limited or IP-banned.
 """
 
+import ipaddress
 import os
 import re
+import socket
 import time
 import random
 import requests
@@ -70,6 +72,24 @@ BLOCKED_SITES = {
         "Please paste the job description directly."
     ),
 }
+
+
+def is_public_http_url(url: str) -> bool:
+    """False for anything that isn't http(s) to a public address.
+
+    These URLs come from users. Without this check they could reach cloud metadata
+    services, localhost and other internal systems from this server.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443):
+            if not ipaddress.ip_address(info[4][0]).is_global:
+                return False
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def _is_blocked_site(url: str) -> Optional[str]:
@@ -335,7 +355,17 @@ def _fetch_html(url: str, timeout: int = 10) -> Optional[str]:
     
     try:
         print(f"[html-fetch] Fetching {url[:80]}...")
-        resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        # Redirects are followed by hand, so that each hop gets the same address check.
+        for _ in range(5):
+            if not is_public_http_url(url):
+                print("[html-fetch] Blocked a non-public address")
+                return None
+            resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=False)
+            if not resp.is_redirect:
+                break
+            url = requests.compat.urljoin(url, resp.headers.get("Location", ""))
+        else:
+            return None
         
         if resp.status_code != 200:
             print(f"[html-fetch] HTTP {resp.status_code}")
@@ -701,6 +731,14 @@ def extract_job_data(url: str, api_key: Optional[str] = None) -> Dict[str, str]:
             "error": "..." // only if source == "error"
         }
     """
+    if not is_public_http_url(url):
+        return {
+            "job_title": "",
+            "job_description": "",
+            "source": "error",
+            "error": "Please enter a valid public job listing URL.",
+        }
+
     if not url or not url.strip():
         return {
             "job_title": "",

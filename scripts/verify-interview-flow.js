@@ -143,9 +143,7 @@ async function verify() {
     // Step 4: Check report URLs
     console.log("\n📄 Checking report URLs...");
     console.log(`   HR Report URL: ${interview.report_pdf_url || "❌ NOT SET"}`);
-    console.log(
-      `   Candidate Report URL: ${result.candidate_report_pdf_url || "❌ NOT SET"}`
-    );
+    console.log(`   Candidate Report: served through /api/interviews/${interview.id}/report`);
 
     if (!interview.report_pdf_url) {
       console.warn("   ⚠️  No HR report URL - PDFs may not have been generated");

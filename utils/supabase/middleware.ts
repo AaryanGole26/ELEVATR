@@ -1,35 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or Supabase publishable/anon key");
-}
-
-let parsedUrl: URL;
-try {
-  parsedUrl = new URL(supabaseUrl);
-} catch {
-  throw new Error("Invalid NEXT_PUBLIC_SUPABASE_URL format. Expected https://<project-ref>.supabase.co");
-}
-
-if (!parsedUrl.hostname.endsWith(".supabase.co")) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL must point to a supabase.co host");
-}
+import { getSupabaseConfig } from "./config";
 
 export const updateSession = async (request: NextRequest) => {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers
-    }
-  });
+  let response = NextResponse.next({ request: { headers: request.headers } });
+  const { url, key } = getSupabaseConfig();
 
-  const supabase = createServerClient(supabaseUrl, supabaseKey, {
+  const supabase = createServerClient(url, key, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -44,8 +21,13 @@ export const updateSession = async (request: NextRequest) => {
     }
   });
 
-  // This will refresh session if expired - necessary for Server Components to have a valid session
-  await supabase.auth.getUser();
+  try {
+    // Refreshes an expired session so server code always sees a valid one.
+    await supabase.auth.getUser();
+  } catch (error) {
+    // An auth outage must not take down public pages; protected routes still fail closed.
+    console.error("[middleware] Session refresh failed:", error);
+  }
 
   return response;
 };

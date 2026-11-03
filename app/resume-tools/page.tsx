@@ -1,66 +1,42 @@
-"use client";
+import { ArrowUpRight, FileSearch, Sparkles } from "lucide-react";
+import { getClientSideFrontendRoute } from "@/shared/client-side";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useAuth } from "@/shared/auth-context";
-import { clientSideFrontendUrl, getClientSideFrontendRoute } from "@/shared/client-side";
+const TOOLS = [
+  {
+    title: "Resume analyzer",
+    description: "Score your resume against a job description, see missing skills, and get specific recommendations.",
+    href: getClientSideFrontendRoute("/upload"),
+    Icon: FileSearch,
+    action: "Analyze my resume"
+  },
+  {
+    title: "Resume builder",
+    description: "Start from a professional template or import an existing resume, then export a polished, ATS-ready PDF.",
+    href: getClientSideFrontendRoute("/buildcv"),
+    Icon: Sparkles,
+    action: "Build my resume"
+  }
+];
 
 export default function ResumeToolsPage() {
-  const { user, loading } = useAuth();
-  const [popupBlocked, setPopupBlocked] = useState(false);
-
-  // We wait for auth to finish loading to determine the right path
-  const targetPath = user ? "/upload" : "/";
-  const analyzerUrl = getClientSideFrontendRoute(targetPath);
-  const builderUrl = getClientSideFrontendRoute("/buildcv");
-
-  useEffect(() => {
-    if (loading) return;
-    
-    // Open the appropriate URL on load
-    const externalTab = window.open(analyzerUrl, "_blank", "noopener,noreferrer");
-    if (!externalTab) {
-      setPopupBlocked(true);
-    }
-  }, [analyzerUrl, loading]);
-
-  if (loading) {
-    return (
-      <section className="stack">
-        <div className="glass-card stack" style={{ alignItems: 'center', padding: '40px' }}>
-          <div className="spinner"></div>
-          <p>Authenticating...</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section className="stack">
-      <div className="glass-card stack">
-        <h2 className="m0 mb-sm">Analyzer Launched</h2>
-        <p className="m0 muted-text">The analyzer opens in a new tab so you stay on Elevatr at port 3000.</p>
-        <p className="m0 muted-text">Target frontend: {clientSideFrontendUrl}{targetPath}</p>
-        {popupBlocked ? (
-          <p className="m0" style={{ color: "#ef4444" }}>
-            Your browser blocked the new tab. Use the button below to open it manually.
-          </p>
-        ) : null}
-        <div className="inlineActions wrap mt-sm">
-          <a className="btn" href={analyzerUrl} target="_blank" rel="noreferrer">
-            Open Analyzer In New Tab
-          </a>
-          <a className="btn secondary" href={builderUrl} target="_blank" rel="noreferrer">
-            Open Resume Builder In New Tab
-          </a>
-          <Link className="btn secondary" href="/resume-builder">
-            Go To Resume Builder Page
-          </Link>
-          <Link className="btn secondary" href="/">
-            Back To Elevatr Home
-          </Link>
+    <div className="page-enter">
+      <div className="page-header">
+        <div>
+          <h1>Resume tools</h1>
+          <p className="page-subtitle">Strengthen your resume before you apply. No sign-in needed. Each tool opens in a new tab.</p>
         </div>
       </div>
-    </section>
+      <div className="grid grid-2">
+        {TOOLS.map(({ title, description, href, Icon, action }) => (
+          <a key={title} href={href} target="_blank" rel="noreferrer" className="card card-link">
+            <span className="icon-tile mb"><Icon size={18} aria-hidden="true" /></span>
+            <h2>{title}</h2>
+            <p className="page-subtitle mb">{description}</p>
+            <span className="btn btn-secondary">{action} <ArrowUpRight size={15} aria-hidden="true" /></span>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }

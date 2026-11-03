@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, X, Send } from 'lucide-react';
+import { sendChatMessage } from '@/lib/api';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -53,45 +54,13 @@ export default function Chatbot() {
     setIsLoading(true);
 
     try {
-      const systemPrompt = "You are Neuro, an AI assistant for ELEVATR. You help candidates with resume optimization, ATS scores, and interview prep. Keep answers brief and encouraging.";
-
-      const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing VITE_GROQ_API_KEY");
-      }
-
-      // Sanitize: Groq rejects messages with empty/null content
-      const cleanMessages = [
-        { role: 'system' as const, content: systemPrompt },
-        ...messages.filter(m => m.content && m.content.trim()),
-        userMessage
-      ];
-
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages: cleanMessages
-        })
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        console.error('Groq error:', response.status, errBody);
-        throw new Error(`Groq ${response.status}: ${(errBody as any)?.error?.message || 'Unknown error'}`);
-      }
-      
-      const data = await response.json();
-      const botResponse = data.choices[0]?.message?.content || "Sorry, I'm having trouble thinking right now.";
+      const history = [...messages, userMessage].filter((m) => m.content && m.content.trim()).slice(-20);
+      const botResponse = await sendChatMessage(history);
       
       setMessages(prev => [...prev, { role: 'assistant', content: botResponse }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I encountered an error. Please try again later." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: error instanceof Error ? error.message : 'Sorry, something went wrong.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +70,7 @@ export default function Chatbot() {
     <div className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end pointer-events-none [&>*]:pointer-events-auto">
       {isOpen && (
         <div className="w-[350px] h-[500px] bg-white/85 dark:bg-zinc-900/85 backdrop-blur-md border border-white/50 dark:border-white/10 rounded-3xl shadow-2xl mb-4 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
-          <div className="p-4 bg-gradient-to-br from-blue-600/10 to-cyan-400/5 border-b border-white/60 dark:border-white/10 flex justify-between items-center">
+          <div className="p-4 bg-gradient-to-br from-blue-600/10 to-indigo-600/5 border-b border-white/60 dark:border-white/10 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <Bot size={20} className="text-blue-600 dark:text-blue-400" />
               <h3 className="m-0 text-[1.1rem] font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
@@ -162,7 +131,7 @@ export default function Chatbot() {
       
       {!isOpen && (
         <button 
-          className="w-[60px] h-[60px] rounded-full bg-gradient-to-br from-blue-600 to-cyan-400 border-none text-white flex items-center justify-center shadow-lg shadow-blue-600/40 hover:scale-110 transition-transform duration-300"
+          className="w-[60px] h-[60px] rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 border-none text-white flex items-center justify-center shadow-lg shadow-blue-600/40 hover:scale-110 transition-transform duration-300"
           onClick={() => setIsOpen(true)}
         >
           <Bot size={28} />

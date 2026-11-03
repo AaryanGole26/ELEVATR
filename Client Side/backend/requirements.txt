@@ -1,23 +1,18 @@
+# Resume API (FastAPI). Also needs the spaCy model: python -m spacy download en_core_web_md
 fastapi
 uvicorn[standard]
 python-multipart
+pydantic
+python-dotenv
 requests
 beautifulsoup4
 google-genai
+spacy
+reportlab
 PyMuPDF
 PyPDF2
 python-docx
-reportlab
-fpdf2
-Jinja2
-pydantic
-scikit-learn
-spacy
-nltk
-python-dotenv
-httpx
-aiofiles
+docx2txt
+# Optional: reads job listings from pages that need JavaScript
 selenium
 webdriver-manager
-numpy>=2.0.2
-transformers>=4.41.0

@@ -1,241 +1,103 @@
-import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { createInterviewReportPdf } from "@/ai/report/pdf";
-import { evaluateInterview } from "@/ai/interviewer/evaluator";
+import { APIError, apiError, apiResponse, assertUuid, getClientIp, parseRequestBody, rateLimit } from "@/shared/api-utils";
+import { hasValidServiceSecret, isExpired, tokensMatch } from "@/shared/interview-security";
+import { evaluateAndStore, loadInterviewContext } from "@/shared/interviews";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
-};
+const MAX_TRANSCRIPT_CHARS = 100_000;
 
 const resultSchema = z.object({
-  result_json: z.record(z.any()),
-  candidate_email: z.string().optional(),
-  callback_token: z.string().optional(),
-  decision: z.enum(["selected", "rejected", "pending"]).default("pending")
+  callback_token: z.string().min(1),
+  transcript: z.string().trim().min(10, "Your response is too short.").max(MAX_TRANSCRIPT_CHARS, "Your response is too long."),
+  questions_answered: z.number().int().min(0).max(100).optional(),
+  max_questions: z.number().int().min(0).max(100).optional(),
+  active_interview_seconds: z.number().int().min(0).optional(),
+  proctor_violations: z.number().int().min(0).optional(),
+  completion_reason: z.string().max(500).optional()
 });
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+/**
+ * POST /api/interviews/[id]/result
+ * Records a finished interview. Two callers are allowed:
+ *  - the interview service, authenticated by the shared secret, submitting a server-side transcript
+ *  - a candidate using the written fallback, authenticated by their link token
+ * Scores and decisions are never accepted from the caller. Only the evaluator produces them.
+ */
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const parsed = resultSchema.safeParse(await request.json());
+    if (!rateLimit(`interview:result:${getClientIp(request)}`, 10, 60_000)) {
+      throw new APIError(429, "Too many requests. Please try again later.");
+    }
+
+    const { id: interviewId } = await context.params;
+    assertUuid(interviewId, "Interview");
+
+    const parsed = resultSchema.safeParse(await parseRequestBody(request));
     if (!parsed.success) {
-      console.error("[Result] Validation error:", parsed.error.flatten());
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400, headers: corsHeaders });
+      throw new APIError(400, parsed.error.issues[0]?.message || "Invalid interview submission");
     }
+    const body = parsed.data;
+    const fromService = hasValidServiceSecret(request);
 
-    console.log(`[Result] Processing interview result for interview ID: ${params.id}`);
-
-    // Fetch interview with all necessary context (JD and Resume)
-    const { data: interview, error: interviewErr } = await supabaseAdmin
+    const { data: interview, error } = await supabaseAdmin
       .from("interviews")
-      .select(`
-        id, 
-        application_id, 
-        interview_token, 
-        applications!inner (
-          id,
-          email,
-          pipeline_id,
-          pipelines!inner (
-            id,
-            title,
-            jd_text
-          ),
-          resumes (
-            id,
-            content,
-            metadata
-          )
-        )
-      `)
-      .eq("id", params.id)
-      .single();
+      .select("id, interview_token, expires_at, is_used, applications!inner(status)")
+      .eq("id", interviewId)
+      .maybeSingle();
 
-    if (interviewErr || !interview) {
-      console.error("[Result] Interview query failed:", interviewErr?.message);
-      return NextResponse.json({ error: interviewErr?.message || "Interview not found" }, { status: 404, headers: corsHeaders });
+    if (error) throw new APIError(500, "Failed to load interview", { details: error.message });
+    if (!interview || !tokensMatch(body.callback_token, interview.interview_token)) {
+      throw new APIError(404, "This interview link is not valid.");
+    }
+    if (interview.is_used) throw new APIError(409, "This interview has already been submitted.");
+    if (isExpired(interview.expires_at)) throw new APIError(410, "This interview link has expired.");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((interview.applications as any)?.status === "rejected") {
+      throw new APIError(403, "This interview link is no longer active.");
     }
 
-    console.log(`[Result] Interview found. Application ID: ${interview.application_id}`);
+    // Proctoring data can only be trusted from the service, never from the candidate's browser.
+    const base: Record<string, unknown> = fromService
+      ? {
+          submission_type: "video",
+          questions_answered: body.questions_answered ?? 0,
+          max_questions: body.max_questions ?? 0,
+          active_interview_seconds: body.active_interview_seconds ?? 0,
+          proctor_violations: body.proctor_violations ?? 0,
+          completion_reason: body.completion_reason ?? "Interview completed"
+        }
+      : { submission_type: "written", completion_reason: "Submitted through the written interview" };
 
-    // Handle Supabase's potentially inconsistent join mapping (Object vs Array)
-    const application = Array.isArray(interview.applications) ? interview.applications[0] : (interview.applications as Record<string, unknown>);
-    if (!application) {
-      console.error("[Result] No linked application found");
-      return NextResponse.json({ error: "Linked application not found" }, { status: 404, headers: corsHeaders });
-    }
-
-    const pipeline = application.pipelines || {};
-    const resumes = Array.isArray(application.resumes) ? application.resumes : [application.resumes];
-    const resume = resumes?.[0] || {};
-    const jdText = pipeline.jd_text || "";
-  const resumeText = resume?.content || (resume?.metadata as Record<string, unknown>)?.content || "";
-    const pipelineTitle = pipeline.title || "Standard Pipeline";
-
-    console.log(`[Result] Candidate email: ${application.email || "N/A"}, Pipeline: ${pipelineTitle}`);
-
-    const expectedToken = typeof (interview as { interview_token?: unknown }).interview_token === "string"
-      ? ((interview as { interview_token: string }).interview_token || "")
-      : "";
-    const providedToken = parsed.data.callback_token || "";
-    if (providedToken && expectedToken !== providedToken) {
-      console.error("[Result] Token mismatch");
-      return NextResponse.json({ error: "Unauthorized callback token" }, { status: 401, headers: corsHeaders });
-    }
-
-    // 1. AI Evaluation
-    const transcript = parsed.data.result_json?.transcript || parsed.data.result_json?.conversation || "";
-    console.log(`[Result] Transcript length: ${transcript?.length || 0} chars`);
-    
-    let evaluation = null;
-    if (transcript && transcript.trim().length > 10) {
-      console.log("[Result] Starting AI evaluation...");
-      evaluation = await evaluateInterview(transcript, jdText, resumeText);
-      if (evaluation) {
-        console.log(`[Result] AI evaluation completed. Score: ${evaluation.overallScore}`);
-      } else {
-        console.warn("[Result] AI evaluation returned null");
-      }
-    } else {
-      console.warn("[Result] No valid transcript for AI evaluation");
-    }
-
-    // Merge evaluation with the received result
-    const enrichedResultJson = evaluation 
-      ? { ...parsed.data.result_json, ...evaluation }
-      : { ...parsed.data.result_json, summary: "Interview completed without AI evaluation" };
-
-    console.log(`[Result] Enriched result score: ${enrichedResultJson.overallScore || enrichedResultJson.overall_score}`);
-
-    // 2. Generate PDF with enriched data
-    console.log("[Result] Generating HR report PDF...");
-    const hrPdfBuffer = await createInterviewReportPdf({
-      applicationId: interview.application_id,
-      pipelineTitle: pipelineTitle,
-      candidateEmail: parsed.data.candidate_email || application.email,
-      resultJson: enrichedResultJson,
-      audience: "hr"
-    });
-
-    console.log("[Result] Generating candidate report PDF...");
-    const candidatePdfBuffer = await createInterviewReportPdf({
-      applicationId: interview.application_id,
-      pipelineTitle: pipelineTitle,
-      candidateEmail: parsed.data.candidate_email || application.email,
-      resultJson: enrichedResultJson,
-      audience: "candidate"
-    });
-
-    const hrPath = `interview-reports/${interview.id}.pdf`;
-    const candidatePath = `interview-reports/${interview.id}-candidate.pdf`;
-
-    console.log(`[Result] Uploading HR report to ${hrPath}...`);
-    const { error: hrUploadErr } = await supabaseAdmin.storage.from("reports").upload(hrPath, hrPdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true
-    });
-
-    if (hrUploadErr) {
-      console.error("[Result] HR upload error:", hrUploadErr.message);
-      return NextResponse.json({ error: hrUploadErr.message }, { status: 500, headers: corsHeaders });
-    }
-
-    console.log(`[Result] Uploading candidate report to ${candidatePath}...`);
-    const { error: candidateUploadErr } = await supabaseAdmin.storage.from("reports").upload(candidatePath, candidatePdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true
-    });
-
-    if (candidateUploadErr) {
-      console.error("[Result] Candidate upload error:", candidateUploadErr.message);
-      return NextResponse.json({ error: candidateUploadErr.message }, { status: 500, headers: corsHeaders });
-    }
-
-    console.log("[Result] PDFs uploaded successfully");
-
-    const { data: publicData } = supabaseAdmin.storage.from("reports").getPublicUrl(hrPath);
-    const { data: candidatePublicData } = supabaseAdmin.storage.from("reports").getPublicUrl(candidatePath);
-
-    const reportUrls = {
-      hr: publicData.publicUrl,
-      candidate: candidatePublicData.publicUrl
-    };
-
-    const enrichedResultWithUrls = {
-      ...enrichedResultJson,
-      report_urls: reportUrls,
-      candidate_report_pdf_url: candidatePublicData.publicUrl
-    };
-
-    // 3. Update Interview and Application
-    const finalDecision = parsed.data.decision === "pending" ? "interviewed" : parsed.data.decision;
-    
-    console.log(`[Result] Updating interview status to completed...`);
-    const { error: updateErr } = await supabaseAdmin
+    // Claim the interview atomically and save the transcript first, so a double submission loses
+    // the race and a later evaluation failure can't lose the candidate's answers.
+    const { data: claimed, error: claimError } = await supabaseAdmin
       .from("interviews")
-      .update({ 
-        result_json: enrichedResultWithUrls, 
-        report_pdf_url: publicData.publicUrl,
+      .update({
         is_used: true,
-        interview_status: "completed",
-        completed_at: new Date().toISOString()
+        interview_status: "in_progress",
+        result_json: { ...base, raw_transcript: body.transcript, evaluation_status: "failed" }
       })
-      .eq("id", params.id);
+      .eq("id", interviewId)
+      .eq("is_used", false)
+      .select("id")
+      .maybeSingle();
 
-    if (updateErr) {
-      console.error("[Result] Update interview error:", updateErr);
-    } else {
-      console.log("[Result] Interview updated successfully");
+    if (claimError) throw new APIError(500, "Failed to record interview", { details: claimError.message });
+    if (!claimed) throw new APIError(409, "This interview has already been submitted.");
+
+    const interviewContext = await loadInterviewContext(interviewId);
+
+    try {
+      const outcome = await evaluateAndStore(interviewContext, { transcript: body.transcript, base });
+      return apiResponse(true, { evaluation_status: outcome.evaluationStatus }, "Interview recorded");
+    } catch (processingError) {
+      // The transcript is safe. Flag it for HR, who can retry from the pipeline page.
+      console.error("[Result] Processing failed:", processingError);
+      await supabaseAdmin.from("interviews").update({ interview_status: "failed" }).eq("id", interviewId);
+      return apiResponse(true, { evaluation_status: "failed" }, "Interview recorded");
     }
-
-    console.log(`[Result] Updating application status to ${finalDecision}...`);
-    const { error: appUpdateErr } = await supabaseAdmin
-      .from("applications")
-      .update({ 
-        status: finalDecision,
-        latest_interview_score: evaluation?.overallScore || enrichedResultJson.overall_score || 0,
-        latest_report_pdf_url: publicData.publicUrl,
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", interview.application_id);
-
-    if (appUpdateErr) {
-      console.error("[Result] Update application error:", appUpdateErr);
-    } else {
-      console.log("[Result] Application updated successfully");
-    }
-
-    // NOTE: Emails are NOT sent here. They are sent during finalization:
-    // - Manual selection by HR: Wait for HR to click "Finalize & Send Pass Emails"
-    // - AI selection by interview score: HR can automate with cutoff score
-    // This keeps the result endpoint focused on data processing, not notifications
-    console.log("[Result] Interview processing completed. Candidate will be notified during finalization by HR.");
-    console.log(`[Result] Score: ${evaluation?.overallScore || enrichedResultJson.overall_score || 0}`);
-
-    console.log("[Result] Interview processing completed successfully");
-    return NextResponse.json(
-      { 
-        ok: true, 
-        report_pdf_url: publicData.publicUrl, 
-        candidate_report_pdf_url: candidatePublicData.publicUrl,
-        score: evaluation?.overallScore || enrichedResultJson.overall_score
-      }, 
-      { headers: corsHeaders }
-    );
-  } catch (err) {
-    console.error("[Result] Unexpected error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" }, 
-      { status: 500, headers: corsHeaders }
-    );
+  } catch (error) {
+    return apiError(error);
   }
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: corsHeaders
-  });
 }

@@ -6,7 +6,7 @@
 
 @layer base {
   :root {
-    --background: 226 50% 97%; /* #f3f6fc equivalent */
+    --background: 224 62% 96%; /* #eef2fb, shared with the main app */
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
@@ -15,28 +15,28 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 217 91% 60%; /* #3b82f6 equivalent */
+    --primary: 221 83% 53%; /* #2563eb, shared with the main app */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 213 94% 96%;
-    --secondary-foreground: 217 91% 60%;
+    --secondary-foreground: 221 83% 53%;
 
     --muted: 220 13% 96%;
     --muted-foreground: 215 16% 47%;
 
     --accent: 217 91% 95%;
-    --accent-foreground: 217 91% 60%;
+    --accent-foreground: 221 83% 53%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --ring: 221 83% 53%;
 
     --radius: 0.75rem;
 
     /* ELEVATR Special Gradients & Shadows */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(239 84% 67%));
-    --gradient-hero: linear-gradient(135deg, #0f172a 0%, #3b82f6 100%);
-    --gradient-card: rgba(255, 255, 255, 0.75);
+    --gradient-primary: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+    --gradient-hero: linear-gradient(135deg, #0f172a 0%, #2563eb 100%);
+    --gradient-card: rgba(255, 255, 255, 0.62);
     
     --shadow-card: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
     --shadow-elevated: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -54,9 +54,10 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background-image: 
-      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 30%),
-      radial-gradient(circle at bottom right, rgba(99, 102, 241, 0.08), transparent 30%);
+    background-image:
+      radial-gradient(900px 600px at 8% -10%, rgba(37, 99, 235, 0.2), transparent 62%),
+      radial-gradient(800px 600px at 96% 8%, rgba(99, 102, 241, 0.18), transparent 60%),
+      radial-gradient(900px 700px at 60% 110%, rgba(14, 165, 233, 0.14), transparent 60%);
     background-attachment: fixed;
   }
 
@@ -70,6 +71,26 @@
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03), 0 10px 30px -12px rgba(30, 41, 90, 0.16);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass-card { background: rgba(255, 255, 255, 0.94); }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .glass-card, .card-elevated { background: #ffffff; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   }
 
   .card-elevated {

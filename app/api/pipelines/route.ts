@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit, parseRequestBody } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, rateLimit, parseRequestBody, getClientIp } from "@/shared/api-utils";
+
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
 const createPipelineSchema = z.object({
   job_title: z.string().min(3, "Job title must be at least 3 characters").max(100, "Job title must be less than 100 characters"),
@@ -13,7 +16,7 @@ const createPipelineSchema = z.object({
 export async function GET(request: Request) {
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`pipeline:list:${ip}`, 30, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -27,35 +30,12 @@ export async function GET(request: Request) {
     // Fetch pipelines
     const { data: pipelines, error } = await supabaseAdmin
       .from("pipelines")
-      .select("id, title, tags, threshold, created_at, applications (id, status)")
+      .select("id, title, tags, threshold, is_active, created_at, applications (id, status, score)")
       .eq("hr_id", guard.user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
       throw new APIError(500, "Failed to fetch pipelines", { details: error.message });
-    }
-
-    const allApplicationIds = (pipelines || []).flatMap(p => 
-      Array.isArray(p.applications) ? p.applications.map((a: any) => a.id) : []
-    );
-
-    let interviewMap = new Map<string, number>();
-    if (allApplicationIds.length > 0) {
-      const { data: interviews } = await supabaseAdmin
-        .from("interviews")
-        .select("application_id, result_json")
-        .in("application_id", allApplicationIds);
-      
-      (interviews || []).forEach(i => {
-        if (i.result_json && !interviewMap.has(i.application_id)) {
-          // Simplistic extraction of score
-          const payload = i.result_json as Record<string, any>;
-          const score = payload.overall_score || payload.overallScore || payload.score;
-          if (typeof score === 'number') {
-            interviewMap.set(i.application_id, score);
-          }
-        }
-      });
     }
 
     // Return success response
@@ -65,23 +45,14 @@ export async function GET(request: Request) {
         pipelines: (pipelines || []).map((pipeline) => {
           const apps = Array.isArray(pipeline.applications) ? pipeline.applications : [];
           const candidates = apps.length;
-          const shortlisted = apps.filter(a => a.status === 'selected').length;
-          
-          let totalScore = 0;
-          let scoredCount = 0;
-          apps.forEach((a: any) => {
-            const score = interviewMap.get(a.id);
-            if (score !== undefined) {
-              totalScore += score;
-              scoredCount++;
-            }
-          });
-          const avgScore = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 0;
+          const shortlisted = apps.filter((a) => ["shortlisted", "interview", "interviewed", "selected"].includes(a.status)).length;
+          const scores = apps.map((a) => a.score).filter((score): score is number => typeof score === "number");
+          const avgScore = scores.length > 0 ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
 
           return {
             ...pipeline,
+            applications: undefined,
             job_title: pipeline.title,
-            is_active: true,
             _stats: { candidates, avg_score: avgScore, shortlisted }
           };
         })
@@ -97,7 +68,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`pipeline:create:${ip}`, 10, 60000)) {
       throw new APIError(429, "Too many pipeline creations. Please try again later.");
     }
@@ -130,7 +101,7 @@ export async function POST(request: Request) {
     const { data: pipeline, error } = await supabaseAdmin
       .from("pipelines")
       .insert(payload)
-      .select("id, title, tags, threshold, created_at")
+      .select("id, title, jd_text, tags, threshold, is_active, created_at")
       .single();
 
     if (error) {
@@ -141,7 +112,7 @@ export async function POST(request: Request) {
 
     return apiResponse(
       true,
-      { pipeline: { ...pipeline, job_title: pipeline.title, is_active: true } },
+      { pipeline: { ...pipeline, job_title: pipeline.title } },
       `Pipeline "${parsed.data.job_title}" created successfully`,
       201
     );

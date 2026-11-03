@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { ScreeningResult } from "@/shared/types";
 import { getCurrentUser } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
 import { analyzeResumeAgainstJd } from "@/ai/screening/resumeAnalyzer";
-import { APIError, apiResponse, apiError, rateLimit, parseRequestBody } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, rateLimit, parseRequestBody, getClientIp } from "@/shared/api-utils";
 
 const screeningSchema = z.object({
   pipeline_id: z.string().uuid("Invalid pipeline ID").optional(),
@@ -13,8 +13,13 @@ const screeningSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    // Rate limiting - screening requires more compute so stricter limits
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    // Keeps the endpoint from being an open, unauthenticated compute service.
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new APIError(401, "Authentication required.");
+    }
+
+    const ip = getClientIp(request);
     if (!rateLimit(`screening:${ip}`, 5, 60000)) {
       throw new APIError(429, "Too many screening requests. Please wait before submitting another analysis.");
     }
@@ -45,21 +50,17 @@ export async function POST(request: Request) {
     }
 
     // Run screening analysis (AI module)
-    let result: any;
+    let result: ScreeningResult;
     try {
       result = analyzeResumeAgainstJd(resume_text, jd_text);
     } catch (aiError) {
-      throw new APIError(500, "Failed to analyze resume. Please try again.", {
-        details: aiError instanceof Error ? aiError.message : "Unknown AI error"
-      });
+      console.error("Screening failed:", aiError);
+      throw new APIError(500, "Failed to analyze resume. Please try again.");
     }
 
-    // Get current user for database storage
-    const user = await getCurrentUser();
-
-    // Store analysis if user authenticated and pipeline provided
+    // Store the analysis when it belongs to a pipeline
     let analysisId: string | null = null;
-    if (user && pipeline_id) {
+    if (pipeline_id) {
       try {
         // Store resume
         const { data: resume, error: resumeErr } = await supabaseAdmin

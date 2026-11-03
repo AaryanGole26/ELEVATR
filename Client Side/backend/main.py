@@ -1,7 +1,10 @@
-import uvicorn
+import logging
 import os
-from fastapi import FastAPI, UploadFile, Form, Body, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
+import time
+
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, Form, Body
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
@@ -10,58 +13,20 @@ from io import BytesIO
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# Import job link extractor (new module for safe job data extraction)
-try:
-    from job_link_extractor import extract_job_data, fetch_job_description_from_url
-except ImportError as e:
-    print(f"Warning: Could not import job_link_extractor: {e}")
-    # Define stub functions
-    def extract_job_data(url, api_key=None):
-        return {"job_title": "", "job_description": "", "source": "error", "error": "Module not available"}
-    def fetch_job_description_from_url(url, api_key=None):
-        return ""
-
-# Import your core functions (adjust the import path as needed)
-try:
-    from core import (
-        parse_resume, 
-        extract_job_skills, 
-        analyze_skill_match, 
-        generate_llm_recommendations, 
-        format_for_ui_and_pdf, 
-        export_to_pdf, 
-        get_description_from_db, 
-        calculate_ats_score
-    )
-except ImportError as e:
-    print(f"Warning: Could not import core functions: {e}")
-    # Define stub functions for testing
-    def parse_resume(file): return {}
-    def extract_job_skills(text): return []
-    def analyze_skill_match(resume, skills): return {}
-    def generate_llm_recommendations(resume, jd, match): return {}
-    def format_for_ui_and_pdf(match, rec, ats): return {}
-    def export_to_pdf(data): return "report.pdf"
-    def get_description_from_db(role): return ""
-    def calculate_ats_score(resume, jd): return {}
-
-# Import parser functions
-try:
-    from parser import parse_resume_upload, parse_resume_from_path
-except ImportError as e:
-    print(f"Warning: Could not import parser functions: {e}")
-    # Define stub functions
-    async def parse_resume_upload(file): return {"error": "Parser not available"}
-    def parse_resume_from_path(path): return {"error": "Parser not available"}
-
-# Import render functions
-try:
-    from render import render_pdf_from_template, render_html_from_data
-except ImportError as e:
-    print(f"Warning: Could not import render functions: {e}")
-    # Define stub functions
-    def render_pdf_from_template(template, data): return JSONResponse({"error": "Render not available"})
-    def render_html_from_data(data, template): return JSONResponse({"error": "Render not available"})
+from job_link_extractor import extract_job_data, fetch_job_description_from_url
+from core import (
+    parse_resume,
+    extract_job_skills,
+    analyze_skill_match,
+    generate_llm_recommendations,
+    format_for_ui_and_pdf,
+    export_to_pdf,
+    get_description_from_db,
+    calculate_ats_score,
+    gemini_api_key,
+)
+from parser import parse_resume_upload
+from render import render_pdf_from_template, render_html_from_data
 
 # Optional document extractors
 try:
@@ -77,40 +42,67 @@ except Exception:
 # Initialize FastAPI app FIRST
 app = FastAPI()
 
-# Temporary storage for the last analysis result
-temp_storage = {}
+logger = logging.getLogger("resume-api")
 
-# CORS middleware configuration
-origins = [
-    "http://localhost:5173",
-    "http://localhost:8080",
-    "http://localhost:8081",
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:8080",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000",
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+RATE_LIMITED_PATHS = {
+    "/analyze-resume": 10,
+    "/extract-job": 10,
+    "/fetch-job-description": 10,
+    "/upload_resume": 20,
+    "/generate_resume": 20,
+    "/export-pdf": 20,
+    "/chat": 20,
+}
+RATE_WINDOW_SECONDS = 60
+_rate_counters: dict = {}
+
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "RESUME_API_ALLOWED_ORIGINS",
+        "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Temporarily open for debugging, will refine later
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def protect_requests(request: Request, call_next):
+    """Rejects oversized uploads and limits per-client use of the expensive endpoints."""
+    declared_size = request.headers.get("content-length")
+    if declared_size and declared_size.isdigit() and int(declared_size) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"error": "That file is too large. The limit is 10MB."}, status_code=413)
+
+    limit = RATE_LIMITED_PATHS.get(request.url.path)
+    if limit and request.method == "POST":
+        client = request.client.host if request.client else "unknown"
+        now = time.time()
+        if len(_rate_counters) > 10_000:
+            _rate_counters.clear()
+        count, window_start = _rate_counters.get((client, request.url.path), (0, now))
+        if now - window_start > RATE_WINDOW_SECONDS:
+            count, window_start = 0, now
+        if count >= limit:
+            return JSONResponse({"error": "Too many requests. Please wait a minute and try again."}, status_code=429)
+        _rate_counters[(client, request.url.path)] = (count + 1, window_start)
+
+    return await call_next(request)
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    import traceback
-    error_msg = str(exc)
-    stack_trace = traceback.format_exc()
-    print(f"ERROR: {error_msg}\n{stack_trace}")
-    return JSONResponse(
-        status_code=500,
-        content={"success": False, "error": error_msg, "traceback": stack_trace},
-    )
+    # The details stay in the server log: stack traces reveal internals to callers.
+    logger.exception("Unhandled error on %s", request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"success": False, "error": "Something went wrong. Please try again."})
 
 
 # Helper functions
@@ -230,7 +222,7 @@ async def _extract_text_from_file(file) -> str:
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "running", "message": "ELEVATR API is up!"}
+    return {"status": "running", "message": "ELEVATR API is up!", "ai_recommendations": bool(gemini_api_key)}
 
 
 @app.post("/fetch-job-description")
@@ -294,7 +286,7 @@ async def fetch_job_description_endpoint(job_description_url: str = Form(...)):
                 "success": False, 
                 "text": "", 
                 "job_title": "",
-                "message": f"Error fetching URL: {str(e)}",
+                "message": "We couldn't read that link. Please paste the job description instead.",
                 "source": "error",
             }, 
             status_code=500
@@ -333,7 +325,7 @@ async def extract_job_endpoint(payload: ExtractJobRequest):
         print(f"Error in extract_job_endpoint: {e}")
         return JSONResponse(
             {"job_title": "", "job_description": "", "source": "error",
-             "error": f"Extraction failed: {str(e)}"},
+             "error": "We couldn't read that link. Please paste the job description instead."},
             status_code=500,
         )
 
@@ -385,40 +377,85 @@ async def analyze_resume(
     if not jd_text:
         jd_text = get_description_from_db(job_role)
 
-    resume_data = parse_resume(file)
+    if not jd_text.strip():
+        return JSONResponse({"error": "Please provide a job description."}, status_code=400)
+
+    try:
+        resume_data = parse_resume(file)
+    except Exception:
+        logger.exception("Could not parse uploaded resume")
+        return JSONResponse({"error": "We couldn't read that resume. Please upload a text-based PDF."}, status_code=400)
+
     required_skills = extract_job_skills(jd_text)
     match_info = analyze_skill_match(resume_data, required_skills)
     ats_data = calculate_ats_score(resume_data, jd_text)
     recommendations = generate_llm_recommendations(resume_data, jd_text, match_info)
     formatted = format_for_ui_and_pdf(match_info, recommendations, ats_data)
 
-    temp_storage["last_result"] = formatted
-
     return {"result": formatted}
 
 
-@app.options("/export-pdf")
-async def export_pdf_options():
-    """CORS preflight for export-pdf endpoint."""
-    return {"message": "OK"}
+class ExportPdfRequest(BaseModel):
+    result: dict
+    title: Optional[str] = None
 
 
-@app.get("/export-pdf")
-async def export_pdf():
-    """Export the last analysis result as a PDF."""
-    formatted_data = temp_storage.get("last_result")
-    if not formatted_data:
-        return JSONResponse(
-            {"error": "No analysis result available to export."}, 
-            status_code=404
-        )
+@app.post("/export-pdf")
+async def export_pdf(payload: ExportPdfRequest, background_tasks: BackgroundTasks):
+    """Builds the report from the result the client holds. Nothing is shared between users."""
+    required = {"match_percentage", "matched_skills", "missing_skills", "recommendations"}
+    if not required.issubset(payload.result):
+        return JSONResponse({"error": "Analysis result is incomplete."}, status_code=400)
 
-    pdf_path = export_to_pdf(formatted_data)
-    return FileResponse(
-        path=pdf_path,
-        filename="ResumeReport(ELEVATR).pdf",
-        media_type="application/pdf"
+    pdf_path = export_to_pdf(payload.result)
+    background_tasks.add_task(lambda: os.path.exists(pdf_path) and os.remove(pdf_path))
+    return FileResponse(path=pdf_path, filename="ResumeReport(ELEVATR).pdf", media_type="application/pdf")
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
+
+@app.post("/chat")
+def chat(payload: ChatRequest):
+    """The Neuro assistant for the resume tools. The provider key stays on the server."""
+    api_key = os.environ.get("GROQ_API_KEY", "")
+    if not api_key:
+        return JSONResponse({"error": "The assistant isn't configured yet."}, status_code=503)
+
+    messages = [
+        {"role": m.role, "content": m.content[:4000]}
+        for m in payload.messages[-20:]
+        if m.role in ("user", "assistant") and m.content.strip()
+    ]
+    if not messages:
+        return JSONResponse({"error": "Invalid message."}, status_code=400)
+
+    system = (
+        "You are Neuro, the assistant for ELEVATR's resume tools. Help with resume optimization, "
+        "ATS scores and interview preparation. Keep answers concise and practical."
     )
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+                "messages": [{"role": "system", "content": system}, *messages],
+                "max_tokens": 700,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return {"reply": response.json()["choices"][0]["message"]["content"]}
+    except Exception as exc:
+        logger.warning("Chat provider failed: %s", type(exc).__name__)
+        return JSONResponse({"error": "The assistant is unavailable right now. Please try again shortly."}, status_code=503)
 
 
 @app.get("/templates")
@@ -449,21 +486,7 @@ async def upload_resume(file: UploadFile):
     except Exception as e:
         print(f"Error in upload_resume: {e}")
         return JSONResponse(
-            {"error": f"Failed to parse resume: {str(e)}", "parsed": None},
-            status_code=500
-        )
-
-
-@app.post("/upload_resume_path")
-async def upload_resume_path(file_path: str = Body(..., embed=True)):
-    """Parse a resume from a file path and extract information."""
-    try:
-        result = parse_resume_from_path(file_path)
-        return result
-    except Exception as e:
-        print(f"Error in upload_resume_path: {e}")
-        return JSONResponse(
-            {"error": f"Failed to parse resume: {str(e)}", "parsed": None},
+            {"error": "We couldn't read that resume. Please try a different file.", "parsed": None},
             status_code=500
         )
 
@@ -488,11 +511,9 @@ async def generate_resume(
                 status_code=400
             )
     except Exception as e:
-        print(f"Error in generate_resume: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Resume generation failed")
         return JSONResponse(
-            {"error": f"Failed to generate resume: {str(e)}"},
+            {"error": "We couldn't generate that resume. Please try again."},
             status_code=500
         )
 
@@ -500,4 +521,4 @@ async def generate_resume(
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"Starting ELEVATR API server on port {port}...")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host=os.environ.get("HOST", "127.0.0.1"), port=port)

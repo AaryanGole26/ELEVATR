@@ -3,69 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Video Interviewer</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20260402f') }}">
+    <title>ELEVATR AI Interview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <main class="main-content">
-            <div class="top-row">
-                <div class="panel panel-user">
-                    <h2>You</h2>
-                    <video id="userVideo" autoplay muted></video>
+    <main class="page" id="main">
+        <header class="topbar">
+            <div class="brand"><span class="brand-mark" aria-hidden="true">E</span> ELEVATR <span class="brand-sub">AI Interview</span></div>
+            <div class="metrics" aria-label="Interview progress">
+                <span id="timerStatus" class="chip">00:00</span>
+                <span id="questionCounter" class="chip">Question 0 of 0</span>
+            </div>
+        </header>
 
-                    <div class="ai-info-row" aria-label="AI interviewer identity and interview metrics">
-                        <div class="ai-identity">
-                            <div class="ai-avatar-ring">
-                                <img id="aiVisual" src="{{ url_for('static', filename='assets/ai_visual.png') }}" alt="AI Visual">
-                            </div>
-                            <div class="ai-name">AI Interviewer</div>
+        <div id="proctorStatus" class="notice" role="status">Your camera, tab focus and fullscreen are monitored during the interview.</div>
+
+        <div class="layout">
+            <section class="glass camera-panel" aria-label="Your camera">
+                <video id="userVideo" autoplay muted playsinline></video>
+                <div class="interviewer">
+                    <img id="aiVisual" src="{{ url_for('static', filename='assets/ai_visual.png') }}" alt="" width="40" height="40">
+                    <div>
+                        <strong>AI interviewer</strong>
+                        <span id="speakingState">Waiting to start</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="glass chat-panel" aria-label="Conversation">
+                <div id="chatLog" class="chat-log" aria-live="polite">
+                    <p class="chat-empty">Your conversation will appear here.</p>
+                </div>
+            </section>
+        </div>
+
+        <section class="glass controls">
+            <div id="setup">
+                {% if handoff_context %}
+                <h1>{{ handoff_context.job_title }}</h1>
+                <p class="muted">Up to {{ handoff_context.max_questions }} questions in about {{ handoff_context.time_limit_minutes }} minutes. The interview runs in fullscreen. Stay on this tab and keep your face visible: three warnings end the interview.</p>
+                {% else %}
+                <h1>Practice interview</h1>
+                <p class="muted">Upload a resume and a job description to practice. Nothing is sent to an employer.</p>
+                <div class="fields">
+                    <label for="resumeFile">Resume (PDF)</label>
+                    <input type="file" id="resumeFile" accept=".pdf,application/pdf">
+                    <label for="jobDescription">Job description</label>
+                    <textarea id="jobDescription" rows="4" placeholder="Paste the job description..."></textarea>
+                    <div class="field-row">
+                        <div>
+                            <label for="maxQuestions">Questions</label>
+                            <input type="number" id="maxQuestions" min="1" max="30" value="8">
                         </div>
-                        <div class="divider" aria-hidden="true"></div>
-                        <div class="interview-metrics">
-                            <span id="timerStatus" class="metric-chip">Timer : 00:00</span>
-                            <span id="questionCounter" class="metric-chip">Questions : 0 / 0</span>
+                        <div>
+                            <label for="timeLimitMinutes">Minutes</label>
+                            <input type="number" id="timeLimitMinutes" min="1" max="180" value="20">
                         </div>
                     </div>
                 </div>
-
-                <div class="conversation-panel">
-                    <div class="conversation-header">
-                        <h2>Conversation</h2>
-                    </div>
-                    <div id="chatLog" class="chat-log"></div>
-                </div>
+                {% endif %}
+                <button id="startButton" class="btn" disabled>Allow camera and microphone...</button>
             </div>
 
-            <div id="proctorStatus" class="proctor-status">
-                Proctor mode: Monitoring tab focus, fullscreen state, and camera visibility.
-            </div>
-
-            <div class="controls-panel">
-                <div id="setup">
-                    <h3>Setup</h3>
-                    <label for="resumeFile">Upload Resume (PDF)</label>
-                    <input type="file" id="resumeFile" accept=".pdf">
-                    <textarea id="jobDescription" placeholder="Paste the job description here..."></textarea>
-                    <label for="maxQuestions">Max Questions</label>
-                    <input type="number" id="maxQuestions" min="1" max="30" value="8">
-                    <label for="timeLimitMinutes">Time Limit (minutes, active time)</label>
-                    <input type="number" id="timeLimitMinutes" min="1" max="180" value="20">
-                    <button id="startButton" disabled>Loading Media...</button>
+            <div id="responseControls" hidden>
+                <p id="status" role="status">Ready when you are.</p>
+                <div class="answer-actions">
+                    <button id="recordButton" class="btn">Record answer</button>
+                    <button id="typeToggle" class="btn btn-secondary" type="button">Type instead</button>
                 </div>
-                <div id="responseControls">
-                    <h3>Your Response</h3>
-                    <p id="status">Ready when you are.</p>
-                    <button id="recordButton">Record Answer</button>
-                </div>
+                <form id="typedForm" hidden>
+                    <label for="typedAnswer" class="sr-only">Type your answer</label>
+                    <textarea id="typedAnswer" rows="3" maxlength="6000" placeholder="Type your answer..."></textarea>
+                    <button id="sendTyped" class="btn" type="submit">Send answer</button>
+                </form>
             </div>
+            <p id="setupStatus" class="muted" role="status"></p>
+        </section>
 
-            <audio id="interviewerAudio" controls></audio>
-        </main>
-    </div>
-        <script>
-            window.ELEVATR_HANDOFF = {{ (handoff_context or {}) | tojson }};
-        </script>
-    <script src="{{ url_for('static', filename='script.js', v='20260402h') }}"></script>
+        <audio id="interviewerAudio"></audio>
+    </main>
+
+    <script>window.ELEVATR_HANDOFF = {{ (handoff_context or {}) | tojson }};</script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/shared/auth-context";
 import Navbar from "@/shared/components/Navbar";
 import Chatbot from "@/shared/components/Chatbot";
+import { ToastProvider } from "@/shared/components/ui";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
@@ -15,9 +16,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   width: "device-width",
-  initialScale: 1,
-  maximumScale: 5,
-  userScalable: true,
+  initialScale: 1
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,9 +24,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
       <body>
         <AuthProvider>
-          <Navbar />
-          <main className="shell" style={{ paddingTop: '4.5rem' }}>{children}</main>
-          <Chatbot />
+          <ToastProvider>
+            <Navbar />
+            <main className="shell">{children}</main>
+            <Chatbot />
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

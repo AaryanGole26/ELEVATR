@@ -245,13 +245,18 @@ def format_certifications(certifications: List[Dict]) -> str:
     return latex
 
 
+def _safe_url(url: str) -> str:
+    """Keeps only characters that are safe inside a LaTeX \\href argument."""
+    return re.sub(r"[^A-Za-z0-9\-._~:/?=&+@]", "", str(url or "")).replace("&", r"\&")
+
+
 def format_linkedin_url(linkedin: str) -> str:
     """Format LinkedIn URL for LaTeX with better handling"""
     if not linkedin:
         return ""
     
     # Clean up the URL
-    linkedin = linkedin.strip()
+    linkedin = _safe_url(linkedin.strip())
     
     if not linkedin:
         return ""
@@ -366,7 +371,7 @@ def substitute_template_variables(template_content: str, data: Dict) -> str:
     
     # Format contact information
     name = _sanitize_latex(p.get("name", "Your Name"))
-    email = p.get("email", "your.email@example.com")
+    email = _sanitize_latex(p.get("email", "your.email@example.com"))
     phone = _sanitize_latex(p.get("phone", "(123) 456-7890"))
     location = _sanitize_latex(p.get("location", "City, State"))
     
@@ -997,7 +1002,10 @@ def _find_pdflatex_executable() -> Optional[str]:
 def render_pdf_from_template(template_name: str, data: Dict) -> StreamingResponse:
     """Enhanced PDF rendering with better error handling and LaTeX compilation"""
     try:
-        # Find template file
+        # Find template file. Only a bare .tex name is accepted, so paths can't leave the folder.
+        template_name = os.path.basename(str(template_name))
+        if not template_name.endswith(".tex"):
+            return render_pdf_placeholder()
         template_paths = [
             os.path.join(os.path.dirname(__file__), "templates", template_name),
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates", template_name),
@@ -1043,6 +1051,7 @@ def render_pdf_from_template(template_name: str, data: Dict) -> StreamingRespons
             # Compile LaTeX to PDF (two passes for references)
             compile_args = [
                 pdflatex,
+                '-no-shell-escape',
                 '-interaction=nonstopmode',
                 '-halt-on-error',
                 '-output-directory', temp_dir,
@@ -1056,7 +1065,9 @@ def render_pdf_from_template(template_name: str, data: Dict) -> StreamingRespons
                     capture_output=True,
                     text=True,
                     timeout=60,
-                    cwd=temp_dir
+                    cwd=temp_dir,
+                    # openin_any=p stops LaTeX from reading files outside the working folder.
+                    env={**os.environ, "openin_any": "p", "openout_any": "p"},
                 )
                 
                 # Second pass (for cross-references)
@@ -1065,7 +1076,9 @@ def render_pdf_from_template(template_name: str, data: Dict) -> StreamingRespons
                     capture_output=True,
                     text=True,
                     timeout=60,
-                    cwd=temp_dir
+                    cwd=temp_dir,
+                    # openin_any=p stops LaTeX from reading files outside the working folder.
+                    env={**os.environ, "openin_any": "p", "openout_any": "p"},
                 )
                 
                 # Check if PDF was created

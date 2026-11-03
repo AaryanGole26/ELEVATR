@@ -1,207 +1,123 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { getBrowserSupabase } from '@/shared/supabase/client';
+import { Alert, LoadingState } from '@/shared/components/ui';
+
+const LINK_CHECK_MS = 4000;
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => getBrowserSupabase(), []);
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [ready, setReady] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
+  const [done, setDone] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [linkState, setLinkState] = useState<'checking' | 'valid' | 'invalid'>('checking');
 
+  // Supabase processes the token in the URL asynchronously, so wait briefly for the session.
   useEffect(() => {
-    const validateRecoverySession = async () => {
-      try {
-        // Get current session
-        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-        
-        if (sessionErr) {
-          console.error('Session error:', sessionErr);
-        }
-
-        if (session) {
-          setHasSession(true);
-          setReady(true);
-          setChecking(false);
-          return;
-        }
-
-        // If no session yet, listen for auth state changes
-        // This handles the case where the recovery token is being processed
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-          console.log('Auth state changed:', event, !!session);
-          
-          if (event === 'RECOVERY' || (event === 'SIGNED_IN' && session?.user?.recovery_sent_at)) {
-            setHasSession(true);
-            setReady(true);
-            setChecking(false);
-          } else if (event === 'SIGNED_OUT' || !session) {
-            // Still waiting for recovery session to be processed
-          }
-        });
-
-        // Wait a bit for Supabase to process the recovery token from the URL
-        const startTime = Date.now();
-        const timeout = setTimeout(() => {
-          const { data: { session: finalSession } } = supabase.auth.getSession();
-          
-          if (!finalSession) {
-            console.warn('Recovery session not detected after 3 seconds');
-            setError(
-              'Could not verify reset link. This may happen if: ' +
-              '1) The link has expired (valid for 24 hours), ' +
-              '2) The link was already used, or ' +
-              '3) There\'s a network issue. Please request a new reset link.'
-            );
-            setReady(false);
-          }
-          
-          subscription?.unsubscribe();
-          setChecking(false);
-        }, 3000);
-
-        return () => {
-          clearTimeout(timeout);
-          subscription?.unsubscribe();
-        };
-      } catch (err) {
-        console.error('Validation error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to validate reset link');
-        setReady(false);
-        setChecking(false);
-      }
+    let settled = false;
+    const accept = () => {
+      settled = true;
+      setLinkState('valid');
     };
 
-    validateRecoverySession();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) accept();
+    });
+
+    // Links for accounts created by HR carry a one-time token for this page to verify.
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+    if (tokenHash && params.get('type') === 'recovery') {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }).then(({ data, error: verifyError }) => {
+        if (!verifyError && data.session) accept();
+        else setLinkState('invalid');
+      });
+    }
+
+    const timer = window.setTimeout(async () => {
+      if (settled || tokenHash) return;
+      const { data } = await supabase.auth.getSession();
+      if (data.session) accept();
+      else setLinkState('invalid');
+    }, LINK_CHECK_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
-    setMessage('');
-
-    if (!hasSession) {
-      setError('Session expired. Please request a new reset link.');
-      return;
-    }
 
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
-
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       return;
     }
 
-    setLoading(true);
-
+    setSaving(true);
     try {
-      const { error: updateErr } = await supabase.auth.updateUser({ password });
-      if (updateErr) {
-        throw updateErr;
-      }
-
-      setMessage('✓ Password updated successfully. Redirecting to login...');
-      setPassword('');
-      setConfirmPassword('');
-      
-      // Sign out the recovery session
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setDone(true);
       await supabase.auth.signOut();
-      
-      window.setTimeout(() => {
-        router.replace('/login');
-      }, 1500);
+      window.setTimeout(() => router.replace('/login'), 1500);
     } catch (err) {
-      console.error('Password update error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update password. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to update your password. Please try again.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (checking) {
-    return (
-      <div className="form-container">
-        <div className="form-card">
-          <div className="spinner"></div>
-          <p>Validating reset link...</p>
-          <small style={{ marginTop: '10px', color: '#999' }}>This may take a few seconds</small>
-        </div>
-      </div>
-    );
-  }
+  if (linkState === 'checking') return <LoadingState label="Checking your reset link..." />;
 
   return (
-    <div className="form-container">
-      <div className="form-card">
-        <h1>Set New Password</h1>
-        <p className="form-subtitle">Create a new password for your ELEVATR account.</p>
+    <div className="focus-page page-enter">
+      <div className="card focus-card">
+        <h1>Set a new password</h1>
 
-        {error && <div className="error-box">{error}</div>}
-        {message && <div className="success-box">{message}</div>}
-
-        {ready ? (
-          <form onSubmit={handleSubmit} className="form">
-            <div className="form-group">
-              <label htmlFor="password">New Password</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={loading}
-                required
-              />
-              <small>At least 8 characters</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="confirmPassword">Confirm Password</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={loading}
-                required
-              />
-            </div>
-
-            <button type="submit" disabled={loading || !password || !confirmPassword} className="btn btn-primary">
-              {loading ? 'Updating...' : 'Update Password'}
-            </button>
-          </form>
+        {linkState === 'invalid' ? (
+          <>
+            <Alert>This reset link is invalid or has expired. Links work once, for a limited time.</Alert>
+            <Link href="/forgot-password" className="btn btn-block">Request a new link</Link>
+          </>
+        ) : done ? (
+          <Alert kind="success">Your password has been updated. Taking you to sign in...</Alert>
         ) : (
-          <div className="form-footer" style={{ marginTop: '20px' }}>
-            <p style={{ color: '#d32f2f', marginBottom: '15px' }}>
-              ⚠️ {error || 'Unable to process reset link'}
-            </p>
-            <Link href="/forgot-password" className="btn btn-secondary" style={{ display: 'inline-block' }}>
-              Request New Reset Link
-            </Link>
-          </div>
+          <>
+            <p className="form-subtitle">Choose a new password for your ELEVATR account.</p>
+            {error && <Alert>{error}</Alert>}
+            <form onSubmit={handleSubmit} className="form">
+              <div className="form-group">
+                <label htmlFor="password">New password</label>
+                <input id="password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={saving} required minLength={8} />
+                <small>At least 8 characters</small>
+              </div>
+              <div className="form-group">
+                <label htmlFor="confirmPassword">Confirm password</label>
+                <input id="confirmPassword" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={saving} required />
+              </div>
+              <button type="submit" disabled={saving} className="btn btn-block">
+                {saving ? 'Updating...' : 'Update password'}
+              </button>
+            </form>
+          </>
         )}
 
         <div className="form-footer">
-          <p>
-            Back to <Link href="/login">Login</Link>
-          </p>
-          <p>
-            Need a fresh link? <Link href="/forgot-password">Forgot Password</Link>
-          </p>
+          <p>Back to <Link href="/login">sign in</Link></p>
         </div>
       </div>
     </div>

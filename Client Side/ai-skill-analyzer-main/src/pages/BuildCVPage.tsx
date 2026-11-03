@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { listTemplates, uploadResume, uploadResumeByPath, generateResume } from "@/lib/api";
+import { listTemplates, uploadResume, generateResume } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles } from "lucide-react";
 import { Plus, Trash2 } from "lucide-react";
@@ -32,7 +32,6 @@ const BuildCVPage = () => {
   const [generating, setGenerating] = useState<"html" | "pdf" | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [htmlPreview, setHtmlPreview] = useState<string>("");
-  const [localPath, setLocalPath] = useState<string>("");
   const templateLabel = (t: string) => {
     const name = t.replace(/\.tex$/i, "");
     const map: Record<string,string> = {
@@ -74,7 +73,7 @@ const BuildCVPage = () => {
       const found = extractFirstUrlFromText(scanText);
       setExtractedSite(found);
       // If user has no explicit website field, populate it with the extracted value (but don't overwrite existing).
-      const hasWebsite = !!(resumeData.personalInfo && (resumeData.personalInfo.website || resumeData.personalInfo.portfolio));
+      const hasWebsite = !!(resumeData.personalInfo && (resumeData.personalInfo.website || (resumeData.personalInfo as { portfolio?: string }).portfolio));
       if (!hasWebsite && found) {
         setResumeData({
           ...resumeData,
@@ -374,38 +373,6 @@ const BuildCVPage = () => {
                 {uploading ? "Uploading..." : "Select File"}
               </Button>
 
-              {/* Dev helper: extract via local file path using backend */}
-              <div className="flex items-center gap-2 mt-2">
-                <Input
-                  placeholder="Local file path (e.g., C:\\path\\to\\resume.pdf)"
-                  value={localPath}
-                  onChange={(e) => setLocalPath(e.target.value)}
-                />
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    if (!localPath.trim()) return;
-                    setUploading(true);
-                    try {
-                      const res = await uploadResumeByPath(localPath.trim());
-                      if (res?.parsed) {
-                        setResumeData({ ...resumeData, ...res.parsed });
-                        toast({ title: "Parsed from path", description: "Review extracted details." });
-                      } else if (res?.error) {
-                        toast({ title: "Path parse error", description: res.error, variant: "destructive" });
-                      }
-                    } catch (e: any) {
-                      toast({ title: "Path parse failed", description: e?.message ?? String(e), variant: "destructive" });
-                    } finally {
-                      setUploading(false);
-                    }
-                  }}
-                  disabled={uploading}
-                >
-                  Extract via Local Path
-                </Button>
-              </div>
-
               {sectionTitle("Personal Info")}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Input placeholder="Name" value={resumeData.personalInfo.name}
@@ -423,7 +390,7 @@ const BuildCVPage = () => {
                 <div>
                   <Input
                     placeholder="Website / Portfolio"
-                    value={resumeData.personalInfo.website || resumeData.personalInfo.portfolio || ""}
+                    value={resumeData.personalInfo.website || (resumeData.personalInfo as { portfolio?: string }).portfolio || ""}
                     onChange={(e) => {
                       setUseExtracted(false);
                       setResumeData({ ...resumeData, personalInfo: { ...resumeData.personalInfo, website: e.target.value } });
@@ -748,7 +715,7 @@ const BuildCVPage = () => {
                 <div>
                   <Input
                     placeholder="Website / Portfolio"
-                    value={resumeData.personalInfo.website || resumeData.personalInfo.portfolio || ""}
+                    value={resumeData.personalInfo.website || (resumeData.personalInfo as { portfolio?: string }).portfolio || ""}
                     onChange={(e) => {
                       setUseExtracted(false);
                       setResumeData({ ...resumeData, personalInfo: { ...resumeData.personalInfo, website: e.target.value } });

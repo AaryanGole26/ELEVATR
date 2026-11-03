@@ -368,7 +368,7 @@ const ResultsPage = () => {
     setIsExporting(true);
     try {
       // Use the API abstraction for PDF export
-      const pdfBlob = await exportPdf();
+      const pdfBlob = await exportPdf(result);
 
       // Create download link for the PDF blob
       const url = window.URL.createObjectURL(pdfBlob);

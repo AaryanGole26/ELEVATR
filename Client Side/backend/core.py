@@ -14,12 +14,14 @@ from reportlab.platypus import Paragraph
 from reportlab.graphics.shapes import Drawing, Rect, String
 from datetime import datetime
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
 load_dotenv()
-if not os.getenv("GEMINI_API_KEY"):
-    # Try parent directory if not found in backend/
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(os.path.join(_HERE, "..", ".env"))
+# Shared project settings, such as GROQ_API_KEY. Values already set are not overridden.
+load_dotenv(os.path.join(_HERE, "..", "..", ".env.local"))
 
-BASE_FONT_PATH = os.path.join(os.getcwd(), 'assets', 'fonts')
+BASE_FONT_PATH = os.path.join(_HERE, 'assets', 'fonts')
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Register essential fonts
 pdfmetrics.registerFont(TTFont('Roboto-Regular', os.path.join(BASE_FONT_PATH, 'Roboto-Regular.ttf')))
@@ -59,10 +61,9 @@ except (OSError, ImportError):
         raise OSError(f"Could not load or download SpaCy model 'en_core_web_md': {e}")
 
 # Loading Gemini LLM
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-if not gemini_api_key:
-    raise ValueError("GEMINI_API_KEY environment variable not set")
-client = genai.Client(api_key=gemini_api_key)
+# Without a key the scores still work, and recommendations fall back to general guidance.
+gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 # Temp DB
 job_descriptions_db = {
@@ -374,7 +375,9 @@ def generate_llm_recommendations(resume_data: dict, job_description: str, match_
     3. Emphasize [specific experience or skill] in your resume and quantify the impact wherever possible
     """
     try:
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        if client is None:
+            raise RuntimeError("RESOURCE_EXHAUSTED: Gemini is not configured")
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         return response.text
     except Exception as e:
         print(f"Gemini API Error: {e}")

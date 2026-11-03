@@ -1,115 +1,70 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit, validateRequired } from "@/shared/api-utils";
-import { createClient } from "@supabase/supabase-js";
+import { APIError, apiResponse, apiError, rateLimit, getClientIp } from "@/shared/api-utils";
+import { looksLikePdf, MAX_RESUME_BYTES } from "@/shared/pdf";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+export const runtime = "nodejs";
 
+const PDF_MIME = "application/pdf";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function isDocx(buffer: Buffer) {
+  // DOCX files are ZIP archives.
+  return buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+}
+
+/** POST /api/upload/resume: stores a resume for later parsing. The declared type is checked against the file's bytes. */
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
-    if (!rateLimit(`upload:${ip}`, 10, 60000)) {
+    if (!rateLimit(`upload:${getClientIp(request)}`, 10, 60_000)) {
       throw new APIError(429, "Too many upload requests. Please try again later.");
     }
 
-    // Authentication
     const user = await getCurrentUser();
-    if (!user) {
-      throw new APIError(401, "Authentication required. Please log in to upload a resume.");
+    if (!user) throw new APIError(401, "Authentication required. Please log in to upload a resume.");
+
+    const file = (await request.formData()).get("file");
+    if (!(file instanceof File)) throw new APIError(400, "No file provided. Please select a PDF or DOCX resume.");
+    if (file.size > MAX_RESUME_BYTES) throw new APIError(413, "File is too large. The maximum size is 5MB.");
+    if (file.type !== PDF_MIME && file.type !== DOCX_MIME) {
+      throw new APIError(400, "Invalid file type. Please upload a PDF or DOCX file.");
     }
 
-    // Parse multipart form data
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const valid = file.type === PDF_MIME ? looksLikePdf(buffer) : isDocx(buffer);
+    if (!valid) throw new APIError(400, "This file's contents don't match its type.");
 
-    if (!file) {
-      throw new APIError(400, "No file provided. Please select a resume file (PDF or DOCX).");
-    }
+    const ext = file.type === PDF_MIME ? "pdf" : "docx";
+    const storagePath = `${user.id}/${crypto.randomUUID()}.${ext}`;
 
-    // Validate file type
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      throw new APIError(400, `Invalid file type. Please upload a PDF or DOCX file. Received: ${file.type}`);
-    }
-
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-      throw new APIError(413, `File is too large. Maximum size is 5MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const ext = file.type === "application/pdf" ? "pdf" : "docx";
-    const fileName = `${user.id}/${timestamp}_resume.${ext}`;
-
-    // Upload to Supabase Storage
-    const fileBuffer = await file.arrayBuffer();
-    
-    // Ensure resumes bucket exists
-    const { data: bucketCheck } = await supabaseAdmin.storage.getBucket("resumes");
-    if (!bucketCheck) {
-      console.log("Bucket 'resumes' not detected at runtime, attempting auto-creation...");
-      await supabaseAdmin.storage.createBucket("resumes", { public: false });
-    }
-
-    const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+    const { error: uploadErr } = await supabaseAdmin.storage
       .from("resumes")
-      .upload(fileName, fileBuffer, {
-        contentType: file.type,
-        upsert: false,
-        metadata: {
-          userId: user.id,
-          uploadedAt: new Date().toISOString(),
-          originalName: file.name
-        }
-      });
+      .upload(storagePath, buffer, { contentType: file.type, upsert: false });
+    if (uploadErr) throw new APIError(500, "Failed to upload file to storage", { details: uploadErr.message });
 
-    if (uploadErr || !uploadData) {
-      throw new APIError(500, "Failed to upload file to storage", {
-        details: uploadErr?.message
-      });
-    }
-
-    // Store metadata in database
-    const { data: resumeRecord, error: dbErr } = await supabaseAdmin
+    const { data: resume, error: dbErr } = await supabaseAdmin
       .from("resumes")
       .insert({
         user_id: user.id,
-        storage_path: uploadData.path,
-        // Move potentially missing columns to metadata
-        metadata: {
-          file_name: file.name,
-          file_type: file.type,
-          file_size: file.size,
-          uploadedAt: new Date().toISOString(),
-          storagePath: uploadData.path
-        }
+        storage_path: storagePath,
+        file_name: file.name,
+        file_type: file.type,
+        file_size: file.size,
+        metadata: { uploaded_at: new Date().toISOString() }
       })
-      .select("id, storage_path, metadata, created_at")
+      .select("id, storage_path, file_name, created_at")
       .single();
 
-    if (dbErr || !resumeRecord) {
-      // Try to clean up uploaded file
-      await supabaseAdmin.storage.from("resumes").remove([uploadData.path]).catch(() => {});
-      throw new APIError(500, "Failed to save resume metadata", {
-        details: dbErr?.message
-      });
+    if (dbErr || !resume) {
+      await supabaseAdmin.storage.from("resumes").remove([storagePath]).catch(() => undefined);
+      throw new APIError(500, "Failed to save resume metadata", { details: dbErr?.message });
     }
-
-    const meta = (resumeRecord.metadata || {}) as Record<string, any>;
 
     return apiResponse(
       true,
-      {
-        resume_id: resumeRecord.id,
-        file_name: meta.file_name || "resume",
-        storage_path: resumeRecord.storage_path,
-        created_at: resumeRecord.created_at
-      },
-      "Resume uploaded successfully",
-      200
+      { resume_id: resume.id, file_name: resume.file_name, storage_path: resume.storage_path, created_at: resume.created_at },
+      "Resume uploaded successfully"
     );
   } catch (error) {
     return apiError(error);

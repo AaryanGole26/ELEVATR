@@ -8,6 +8,7 @@ export interface PersonalInfo {
   linkedin?: string;
   github?: string;
   website?: string;
+  portfolio?: string;
 }
 
 export interface Education {

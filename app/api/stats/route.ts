@@ -1,12 +1,16 @@
 import { NextRequest } from "next/server";
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, rateLimit, getClientIp } from "@/shared/api-utils";
+import { readInterviewScore } from "@/shared/interviews";
+
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`stats:${ip}`, 20, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -20,7 +24,7 @@ export async function GET(request: NextRequest) {
     // Get the HR's pipelines
     const { data: pipelines, error: pipelineErr } = await supabaseAdmin
       .from("pipelines")
-      .select("id, title, created_at")
+      .select("id, title, is_active, created_at")
       .eq("hr_id", guard.user.id);
 
     if (pipelineErr) {
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
     // Get applications for these pipelines
     const { data: applications, error: appErr } = await supabaseAdmin
       .from("applications")
-      .select("id, pipeline_id, candidate_id, resume_id, status, score, created_at")
+      .select("id, pipeline_id, candidate_id, resume_id, status, score, email, last_notified_status, created_at, updated_at")
       .in("pipeline_id", pipelineIds);
 
     if (appErr) {
@@ -80,7 +84,7 @@ export async function GET(request: NextRequest) {
     const applicationIds = (applications || []).map((app) => app.id);
     const { data: interviews } = await supabaseAdmin
       .from("interviews")
-      .select("id, application_id, interview_link, report_pdf_url, result_json, created_at")
+      .select("id, application_id, interview_link, report_pdf_url, result_json, is_used, created_at")
       .in("application_id", applicationIds)
       .order("created_at", { ascending: false });
 
@@ -94,9 +98,11 @@ export async function GET(request: NextRequest) {
     );
 
     const latestInterviewByApplication = new Map<string, {
+      id: string;
       interview_link: string | null;
       report_pdf_url: string | null;
       result_json: unknown;
+      is_used: boolean;
       created_at: string;
     }>();
 
@@ -106,9 +112,11 @@ export async function GET(request: NextRequest) {
       }
 
       latestInterviewByApplication.set(interview.application_id, {
+        id: interview.id,
         interview_link: interview.interview_link || null,
         report_pdf_url: interview.report_pdf_url || null,
         result_json: interview.result_json,
+        is_used: !!interview.is_used,
         created_at: interview.created_at
       });
     }
@@ -118,7 +126,7 @@ export async function GET(request: NextRequest) {
     // Calculate statistics
     const stats = {
       total_pipelines: pipelines?.length || 0,
-      active_pipelines: pipelines?.length || 0,
+      active_pipelines: (pipelines || []).filter((pipeline) => pipeline.is_active).length,
       total_applications: applications?.length || 0,
       applications_by_status: {
         pending: 0,
@@ -130,9 +138,9 @@ export async function GET(request: NextRequest) {
         selected: 0
       },
       average_score: 0,
-      recent_applications: [] as any[],
-      conversion_funnel: [] as any[],
-      round_records: [] as any[]
+      recent_applications: [] as Array<Record<string, unknown>>,
+      conversion_funnel: [] as Array<{ stage: string; count: number; percentage: number }>,
+      round_records: [] as Array<Record<string, unknown>>
     };
 
     if (applications && applications.length > 0) {
@@ -154,7 +162,7 @@ export async function GET(request: NextRequest) {
         .slice(0, 10)
         .map((app) => ({
           id: app.id,
-          email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || resumeEmailMap.get(app.resume_id) || "Unknown",
+          email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || app.email || resumeEmailMap.get(app.resume_id) || "Unknown",
           status: app.status,
           score: app.score,
           created_at: app.created_at
@@ -163,10 +171,12 @@ export async function GET(request: NextRequest) {
       stats.round_records = applications
         .map((app) => {
           const latestInterview = latestInterviewByApplication.get(app.id);
-          const interviewScore = latestInterview ? (latestInterview.result_json as any)?.overall_score || (latestInterview.result_json as any)?.overallScore || (latestInterview.result_json as any)?.score : null;
+          const interviewScore = readInterviewScore(latestInterview?.result_json);
+          const statusMailSent = !!app.last_notified_status;
+          const interviewCompleted = !!latestInterview?.is_used;
           const stageFlow = [
             { stage_order: 1, stage: "Applied", done: true, at: app.created_at },
-            { stage_order: 2, stage: "Status Mail", done: true, at: app.created_at },
+            { stage_order: 2, stage: "Status Mail", done: statusMailSent, at: app.updated_at || app.created_at },
             {
               stage_order: 3,
               stage: "Interview Mail",
@@ -176,7 +186,7 @@ export async function GET(request: NextRequest) {
             {
               stage_order: 4,
               stage: "Interview Completed",
-              done: !!latestInterview?.result_json,
+              done: interviewCompleted,
               at: latestInterview?.created_at || app.created_at
             },
             {
@@ -190,13 +200,13 @@ export async function GET(request: NextRequest) {
           return {
             application_id: app.id,
             pipeline_title: pipelineTitleMap.get(app.pipeline_id) || "Pipeline",
-            email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || resumeEmailMap.get(app.resume_id) || "Unknown",
+            email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || app.email || resumeEmailMap.get(app.resume_id) || "Unknown",
             status: app.status,
-            latest_interview_id: latestInterview?.interview_link ? latestInterview.interview_link.split('/').pop()?.split('?')[0] : null, // ID is usually in the link, but let's be safer
-            latest_interview_score: typeof interviewScore === 'number' ? Math.round(interviewScore) : null,
-            status_mail_sent: true,
+            latest_interview_id: latestInterview?.id || null,
+            latest_interview_score: interviewScore,
+            status_mail_sent: statusMailSent,
             interview_mail_sent: !!latestInterview?.interview_link,
-            interview_completed: !!latestInterview?.result_json,
+            interview_completed: interviewCompleted,
             report_available: !!latestInterview?.report_pdf_url,
             final_mail_sent: app.status === "selected",
             updated_at: latestInterview?.created_at || app.created_at,
@@ -216,8 +226,8 @@ export async function GET(request: NextRequest) {
         },
         {
           stage: "Screened",
-          count: (stats.applications_by_status.screened || 0) + (stats.applications_by_status.shortlisted || 0),
-          percentage: total > 0 ? Math.round((((stats.applications_by_status.screened || 0) + (stats.applications_by_status.shortlisted || 0)) / total) * 100) : 0
+          count: total - (stats.applications_by_status.pending || 0),
+          percentage: total > 0 ? Math.round(((total - (stats.applications_by_status.pending || 0)) / total) * 100) : 0
         },
         {
           stage: "Interview",

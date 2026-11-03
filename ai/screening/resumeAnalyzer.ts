@@ -6,7 +6,8 @@ const STOPWORDS = new Set([
   "were", "they", "them", "ours", "over", "under", "more", "most", "very", "just", "like", "than", "then",
   "also", "such", "used", "using", "does", "done", "role", "work", "years", "year", "tell", "give", "some",
   "many", "each", "across", "are", "highly", "seeking", "skilled", "strong", "excellent", "responsible", "ability",
-  "requirements", "preferred", "mandatory", "must", "nice", "plus"
+  "requirements", "preferred", "mandatory", "must", "nice", "plus", "and", "the", "for", "you", "our", "will",
+  "team", "looking", "experience", "knowledge", "good", "great", "who", "job", "description"
 ]);
 
 const TECH_TERMS = [
@@ -15,31 +16,43 @@ const TECH_TERMS = [
   "data science", "scikit-learn", "fastapi", "flask", "django", "rest", "graphql"
 ];
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Whole-term matching: a plain substring check counted "rest" in "restaurant" and "aws" in "laws".
+const TECH_TERM_MATCHERS = TECH_TERMS.map((term) => ({
+  term,
+  pattern: new RegExp(`(?<![a-z0-9+#])${escapeRegExp(term)}(?![a-z0-9+#])`, "i")
+}));
+
 function tokenize(text: string): string[] {
   return (text || "")
     .toLowerCase()
-    .split(/[^a-z0-9+.#-]+/)
-    .map((w) => w.trim())
-    .filter((w) => w.length > 2 && !STOPWORDS.has(w));
+    .split(/[^a-z0-9+#.-]+/)
+    .map((word) => word.replace(/^[.-]+|[.-]+$/g, ""))
+    .filter((word) => word.length > 2 && !STOPWORDS.has(word));
 }
 
 function detectSkills(text: string): string[] {
-  const lowered = text.toLowerCase();
-  return TECH_TERMS.filter((term) => lowered.includes(term));
+  return TECH_TERM_MATCHERS.filter(({ pattern }) => pattern.test(text)).map(({ term }) => term);
 }
 
 export function analyzeResumeAgainstJd(resumeText: string, jdText: string): ScreeningResult {
-  const jdSkills = new Set(detectSkills(jdText));
-  const resumeSkills = new Set(detectSkills(resumeText));
+  let required = detectSkills(jdText);
+  let found = new Set(detectSkills(resumeText));
 
-  if (jdSkills.size === 0) {
-    const jdTokens = tokenize(jdText).slice(0, 20);
-    jdTokens.forEach((token) => jdSkills.add(token));
+  // For roles without recognised technical terms, compare the job description's own vocabulary.
+  // Previously these terms were checked against the technical skills only, so every resume for a
+  // non-technical role scored 0.
+  if (required.length === 0) {
+    required = Array.from(new Set(tokenize(jdText))).slice(0, 20);
+    found = new Set(tokenize(resumeText));
   }
 
-  const matchedSkills = [...jdSkills].filter((s) => resumeSkills.has(s));
-  const missingSkills = [...jdSkills].filter((s) => !resumeSkills.has(s));
-  const denominator = Math.max(jdSkills.size, 1);
+  const matchedSkills = required.filter((skill) => found.has(skill));
+  const missingSkills = required.filter((skill) => !found.has(skill));
+  const denominator = Math.max(required.length, 1);
   const score = Math.round((matchedSkills.length / denominator) * 100);
 
   const feedback = [
@@ -48,10 +61,5 @@ export function analyzeResumeAgainstJd(resumeText: string, jdText: string): Scre
     score >= 70 ? "Candidate is suitable for shortlist." : "Candidate needs deeper review before shortlist."
   ].join(" ");
 
-  return {
-    score,
-    feedback,
-    matchedSkills,
-    missingSkills
-  };
+  return { score, feedback, matchedSkills, missingSkills };
 }

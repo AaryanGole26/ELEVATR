@@ -4,199 +4,98 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/shared/auth-context';
+import { Alert, LoadingState } from '@/shared/components/ui';
 import type { UserRole } from '@/shared/types';
-
-const SIGNUP_COOLDOWN_KEY = 'elevatr_signup_cooldown_until';
 
 export default function SignupPage() {
   const router = useRouter();
-  const { signUp, user, loading: authLoading } = useAuth();
+  const { signUp, user, role: accountRole, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('hr');
+  const [role, setRole] = useState<UserRole>('candidate');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [cooldownUntil, setCooldownUntil] = useState(0);
-  const [nowTs, setNowTs] = useState(Date.now());
+  const [submitting, setSubmitting] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      router.replace(role === 'hr' ? '/hr' : '/dashboard');
-    }
-  }, [user, role, router]);
+    if (user) router.replace(accountRole === 'hr' ? '/hr' : '/dashboard');
+  }, [user, accountRole, router]);
 
-  useEffect(() => {
-    if (cooldownUntil <= Date.now()) {
-      return;
-    }
-
-    const id = window.setInterval(() => {
-      setNowTs(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(id);
-  }, [cooldownUntil]);
-
-  useEffect(() => {
-    const raw = window.localStorage.getItem(SIGNUP_COOLDOWN_KEY);
-    if (!raw) {
-      return;
-    }
-
-    const ts = Number(raw);
-    if (Number.isFinite(ts) && ts > Date.now()) {
-      setCooldownUntil(ts);
-    }
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
-    setIsLoading(true);
 
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      if (cooldownUntil > Date.now()) {
-        throw new Error('Please wait before trying again.');
-      }
-
-      if (!email || !password || !confirmPassword) {
-        throw new Error('Please fill in all fields');
-      }
-
-      if (password !== confirmPassword) {
-        throw new Error('Passwords do not match');
-      }
-
-      if (password.length < 8) {
-        throw new Error('Password must be at least 8 characters');
-      }
-
-      await signUp(email, password, role);
+      setNeedsConfirmation(await signUp(email.trim(), password, role));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Signup failed';
-      setError(message);
-
-      if (message.toLowerCase().includes('rate limit')) {
-        setCooldownUntil(Date.now() + 60_000);
-      }
+      setError(err instanceof Error ? err.message : 'Signup failed.');
     } finally {
-      setIsLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000));
+  if (loading || user) return <LoadingState />;
 
-  if (authLoading) {
+  if (needsConfirmation) {
     return (
-      <div className="form-container">
-        <div className="spinner"></div>
-        <p>Loading...</p>
+      <div className="focus-page page-enter">
+        <div className="card focus-card center">
+          <h1>Check your email</h1>
+          <p className="form-subtitle">We sent a confirmation link to {email}. Open it to activate your account, then sign in.</p>
+          <Link className="btn" href="/login">Go to sign in</Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="form-container">
-      <div className="form-card">
-        <h1>Create Account</h1>
-        <p className="form-subtitle">Join ELEVATR's AI hiring platform as HR by default.</p>
+    <div className="focus-page page-enter">
+      <div className="card focus-card">
+        <h1>Create your account</h1>
+        <p className="form-subtitle">Join ELEVATR as a candidate or a recruiter.</p>
 
-        {error && <div className="error-box">{error}</div>}
-        {error && (
-          <div className="inlineActions wrap" style={{ marginBottom: '12px' }}>
-            <Link href="/login" className="btn btn-secondary">
-              Go To Login
-            </Link>
-            <Link href="/forgot-password" className="btn btn-secondary">
-              Forgot Password
-            </Link>
-          </div>
-        )}
+        {error && <Alert>{error}</Alert>}
 
         <form onSubmit={handleSubmit} className="form">
           <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              disabled={isLoading}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              disabled={isLoading}
-              required
-            />
-            <small>At least 8 characters</small>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="confirmPassword">Confirm Password</label>
-            <input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              disabled={isLoading}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Account Type</label>
-            <div className="radio-group">
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="role"
-                  value="candidate"
-                  checked={role === 'candidate'}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  disabled={isLoading}
-                />
-                <span>
-                  <strong>Candidate</strong>
-                  <br />
-                  <small>Apply to jobs, take interviews</small>
-                </span>
+            <span className="form-label" id="account-type">I am a</span>
+            <div className="choice-group" role="radiogroup" aria-labelledby="account-type">
+              <label className="choice">
+                <input type="radio" name="role" value="candidate" checked={role === 'candidate'} onChange={() => setRole('candidate')} disabled={submitting} />
+                <span><strong>Candidate</strong><small>Apply and interview</small></span>
               </label>
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="role"
-                  value="hr"
-                  checked={role === 'hr'}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  disabled={isLoading}
-                />
-                <span>
-                  <strong>HR / Recruiter</strong>
-                  <br />
-                  <small>Create pipelines, review candidates</small>
-                </span>
+              <label className="choice">
+                <input type="radio" name="role" value="hr" checked={role === 'hr'} onChange={() => setRole('hr')} disabled={submitting} />
+                <span><strong>Recruiter</strong><small>Create hiring pipelines</small></span>
               </label>
             </div>
           </div>
-
-          <button type="submit" disabled={isLoading || cooldownSeconds > 0} className="btn btn-primary">
-            {isLoading
-              ? 'Creating account...'
-              : cooldownSeconds > 0
-                ? `Try again in ${cooldownSeconds}s`
-                : 'Sign Up'}
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" disabled={submitting} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input id="password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={submitting} required minLength={8} />
+            <small>At least 8 characters</small>
+          </div>
+          <div className="form-group">
+            <label htmlFor="confirmPassword">Confirm password</label>
+            <input id="confirmPassword" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={submitting} required />
+          </div>
+          <button type="submit" disabled={submitting} className="btn btn-block">
+            {submitting ? 'Creating account...' : 'Create account'}
           </button>
         </form>
 

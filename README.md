@@ -14,10 +14,10 @@ ELEVATR connects candidate tools, HR workflows, interview automation, and PDF re
 | Candidate portal | View opportunities, apply to roles, track status, and open interview links | Next.js App Router, React, Supabase, TypeScript |
 | HR dashboard | Create and manage job pipelines, review candidates, send interview invitations, and view analytics | Next.js App Router, Supabase, TypeScript, server API routes |
 | Resume analysis | Parse resumes, compare against JDs, score matches, surface skill gaps, and generate feedback | Vite/React, FastAPI, Gemini, PyMuPDF, PyPDF2, spaCy, scikit-learn |
-| Resume builder | Build/export CVs from templates and candidate data | Vite/React, Python backend, Jinja2, reportlab, fpdf2, LaTeX templates |
+| Resume builder | Build and export CVs from templates and candidate data | Vite/React, FastAPI, LaTeX templates, reportlab |
 | Job pipeline creation | Create JD-based pipelines, shortlist candidates, and feed interview scheduling | Next.js API routes, Supabase tables, Zod validation |
-| Video interview | Run secure invite-based AI interviews with speech input/output | Flask, Gradio client, gTTS, speech_recognition, FFmpeg, Gemini |
-| Reports | Generate HR and candidate-safe PDFs for resume analysis, interview results, and summaries | pdf-lib, reportlab, fpdf2, Jinja2 |
+| Video interview | Run secure, proctored AI interviews from a one-time link, with speech input and output | Flask, Gemini, gTTS, SpeechRecognition, FFmpeg |
+| Reports | Generate HR and candidate PDFs for resume analysis and interview results, served through access-checked links | pdf-lib, reportlab |
 
 ## Tech Stack By Module
 
@@ -35,12 +35,12 @@ ELEVATR connects candidate tools, HR workflows, interview automation, and PDF re
 - Frontend: Vite + React application in `Client Side/ai-skill-analyzer-main`.
 - Backend: FastAPI service in `Client Side/backend`.
 - AI: Google Gemini, with supporting NLP/document tooling for scoring and extraction.
-- Libraries: `PyMuPDF`, `PyPDF2`, `python-docx`, `scikit-learn`, `spaCy`, `nltk`, `requests`.
+- Libraries: `PyMuPDF`, `PyPDF2`, `python-docx`, `docx2txt`, `spaCy`, `requests`.
 
 ### 4. Resume Builder
 - Frontend: Vite/React candidate UI.
-- Backend: Python rendering/export pipeline.
-- Templates: LaTeX files in `templates/` and Python PDF generation helpers.
+- Backend: FastAPI rendering and export.
+- Templates: LaTeX files in `Client Side/templates/`. PDF export needs `pdflatex` (for example MiKTeX).
 - Used to generate a polished resume/CV output from structured content.
 
 ### 5. Job Pipeline Creation
@@ -49,74 +49,41 @@ ELEVATR connects candidate tools, HR workflows, interview automation, and PDF re
 - Zod validation and shared API helpers keep route handling consistent.
 
 ### 6. Video Interview
-- Flask app in `ai-video-interviewer/` handles the interview experience.
-- Uses speech-to-text, text-to-speech, and a token-secured interview session flow.
-- FFmpeg is required for audio processing.
+- Flask app in `ai-video-interviewer/` runs the live interview.
+- The main app hands each interview over server-to-server using `INTERVIEW_SERVICE_SECRET`, so the resume and callback details never reach the browser.
+- Questions come from Gemini, with resume-aware templates as a fallback. Candidates can speak or type their answers.
+- FFmpeg is only needed in browsers without built-in speech recognition.
+- Candidates can use a written interview instead. HR sees which type was used.
 
 ### 7. Reports Generated
 - Interview and resume analysis reports are generated as PDFs.
 - HR reports include evaluation summaries, KPI breakdowns, strengths, weaknesses, and transcript data.
-- Candidate-safe reports are also supported where appropriate.
+- Reports are stored privately. HR can open reports for their own pipelines, and candidates can open only their own candidate report.
 
 ## LLMs and AI Services
 
-The project uses Google Gemini in two main places:
+All AI providers are called from server code, so keys never reach the browser.
 
-- `gemini-2.0-flash` in the Vite/FastAPI resume-analysis backend.
-- `gemini-1.5-flash` in the interview evaluator for structured interview assessment.
+| Provider | Used for | Setting |
+|---|---|---|
+| Google Gemini | Interview questions, interview evaluation, resume recommendations | `GEMINI_MODEL` (default `gemini-2.5-flash`) |
+| Groq | The Neuro assistant | `GROQ_MODEL` (default `openai/gpt-oss-20b`) |
+| gTTS and browser speech recognition, or SpeechRecognition with FFmpeg | Interview speech | None |
 
-Other AI-related packages and services used in the repo:
-
-- `@google/generative-ai`
-- `google-genai`
-- `speech_recognition`
-- `gTTS`
-- `gradio_client`
-- `pdf-lib`
-- `reportlab`
-- `fpdf2`
+If the AI is unavailable, the platform keeps working: interviews use template questions, and evaluations are saved without a score so HR can retry them.
 
 ## Required Environment Variables
 
-Keep real values in local `.env` files only. Do not commit secrets.
-
-### Root `.env.local`
-```bash
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_VIDEO_INTERVIEW_URL=http://localhost:5001
-NEXT_PUBLIC_CLIENT_SIDE_BACKEND_URL=http://localhost:8000
-NEXT_PUBLIC_CLIENT_SIDE_FRONTEND_URL=http://localhost:8080
-GMAIL_USER=...
-GMAIL_APP_PASSWORD=...
-INTERVIEW_TOKEN_SECRET=...
-GOOGLE_API_KEY=...
-GEMINI_API_KEY=...
-```
-
-### Client Side `.env`
-```bash
-GEMINI_API_KEY=...
-VITE_BACKEND_URL=http://localhost:8000
-```
-
-### Notes on keys
-- `NEXT_PUBLIC_*` values are required by the Next.js client/server routes.
-- `SUPABASE_SERVICE_ROLE_KEY` is used only on the server side.
-- `GOOGLE_API_KEY` / `GEMINI_API_KEY` power AI scoring and interview evaluation.
-- Never store real API keys in the README or commit them to git.
+Copy `.env.example` to `.env.local` and fill it in. All three services read that file. Never commit real values, and never give a secret the `NEXT_PUBLIC_` or `VITE_` prefix, because those values are published to browsers.
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- Python 3.11+
-- FFmpeg for the video interview service
+- Python 3.11 or 3.12
 - A Supabase project
-- Google Gemini API key
+- A Google Gemini API key
+- Optional: FFmpeg (voice answers in browsers without speech recognition), `pdflatex` (resume PDF export), a Groq API key (Neuro assistant), a Gmail app password (sending email)
 
 ### Install
 ```bash
@@ -131,6 +98,13 @@ python -m venv venv
 .\venv\Scripts\activate
 pip install -r "Client Side/backend/requirements.txt"
 pip install -r "ai-video-interviewer/requirements.txt"
+python -m spacy download en_core_web_md
+```
+
+### Set up the database
+Point `SUPABASE_DB_URL` at your Supabase Postgres database, then apply the schema and migrations. They are safe to re-run.
+```bash
+SUPABASE_DB_URL=postgresql://... npm run db:apply
 ```
 
 ### Start services
@@ -138,76 +112,93 @@ pip install -r "ai-video-interviewer/requirements.txt"
 start-all.bat
 ```
 
-Or run them separately:
+This runs all four servers in one terminal with coloured `[APP]`, `[AI-V]`, `[BACKEND]` and `[ANALYZE]` labels, after checking that setup is complete and the ports are free. Press Ctrl+C to stop them all. Open http://localhost:3000 once they are ready.
+
+`npm run start-all` does the same without the checks. To run the servers separately:
 ```bash
 npm run dev
 cd "Client Side/ai-skill-analyzer-main" && npm run dev
-cd "Client Side/backend" && python main.py
-cd ai-video-interviewer && python app.py
+cd "Client Side/backend" && ..\..\venv\Scripts\python main.py
+cd ai-video-interviewer && ..\venv\Scripts\python app.py
 ```
+
+## Testing
+
+The end-to-end suite runs a production build and all services against a throwaway local Supabase. It needs Docker, the Supabase CLI and `psql`. It refuses to run against a non-local database, and email is disabled so no real messages are sent.
+
+```bash
+npx playwright install chromium
+venv\Scripts\pip install pytest
+supabase start
+npm run test:e2e        # add E2E_REAL_AI=true to use real Gemini with your key
+npm run test:service    # interview service, runs offline
+npm run typecheck
+```
+
+See [docs/AUDIT.md](docs/AUDIT.md) for the audit findings, test evidence and pre-launch actions.
 
 ## Ports
 
 | Service | Port |
 |---|---|
-| Next.js portal | 3000 |
-| Vite candidate app | 8080 |
-| FastAPI backend | 8000 |
+| Next.js portal and API | 3000 |
+| Vite resume tools | 8080 |
+| FastAPI resume API | 8000 |
 | Flask video interviewer | 5001 |
 
 ## Repository Layout
 
 - `app/` - Next.js UI and API routes
-- `ai/` - Shared AI helpers for interviewing, screening, and PDF reports
+- `ai/` - Interview evaluation, resume screening, and PDF reports
 - `Client Side/` - Candidate resume analysis and resume builder experience
 - `ai-video-interviewer/` - Flask-based video interview app
 - `shared/` - Cross-app utilities, auth, Supabase helpers, and shared types
-- `scripts/` - Utility scripts for storage setup and flow verification
+- `scripts/` - Database setup, storage setup, and flow verification
+- `tests/e2e/` - Browser tests for the whole platform
+- `docs/` - Audit report
 
 ## Documentation
 
-Additional context is available in:
-
-- `BOOKLET.md`
-- `README_DOCUMENTATION_INDEX.md`
-- `START_HERE.md`
-- `QUICK_START.md`
-- `DEBUG_INTERVIEW_FLOW.md`
+- [docs/AUDIT.md](docs/AUDIT.md): audit findings, test evidence, and actions required before launch.
 
 ## Security Reminder
 
 - Never commit `.env` files or generated credentials.
 - Keep Supabase service role keys, Gemini keys, Gmail passwords, and interview secrets local only.
-- Generated reports and model artifacts should remain untracked.
+- Never give a secret the `NEXT_PUBLIC_` or `VITE_` prefix.
+- Generated reports, interview audio, and model artifacts should remain untracked.
 
 ## Project Structure (Summary)
 
 ```
 ELEVATR/
 ├── app/                      Next.js App Router
-├── ai/                       Shared AI engine (Gemini)
+├── ai/                       Evaluation, screening, reports
 ├── shared/                   Auth, Supabase clients, email utils
-├── scripts/                  One-off setup scripts
+├── scripts/                  Database and storage setup
 ├── Client Side/
 │   ├── ai-skill-analyzer-main/  Vite/React SPA
 │   └── backend/                 FastAPI
 ├── ai-video-interviewer/     Flask interview app
-├── BOOKLET.md                Full technical documentation
+├── tests/e2e/                 Browser tests
+├── docs/                     Audit report
+├── .env.example              Settings template
 ├── .gitignore
 ├── .env.local                (not committed — see above)
-└── start-all.bat             Start all services
+└── start-all.bat             Start all services in one terminal
 ```
 
 ---
 
 ## Tech Stack
 
-- **AI:** Google Gemini (generativeai), sentence-transformers, spaCy
+- **AI:** Google Gemini, Groq, spaCy
 - **Frontend:** React 18, Vite, Next.js 14, Tailwind CSS, shadcn/ui, Radix UI
 - **Backend:** FastAPI (Python), Flask (Python)
 - **Database:** Supabase (PostgreSQL + Auth + Storage)
 - **Email:** Nodemailer (Gmail SMTP)
-- **PDF:** pdfplumber, PyMuPDF, WeasyPrint / pdfkit
+- **PDF:** pdf.js (reading), pdf-lib and reportlab (generating), PyMuPDF, LaTeX
+- **Testing:** Playwright, pytest
 
 ---
 

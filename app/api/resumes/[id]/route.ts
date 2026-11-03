@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, assertUuid, rateLimit, getClientIp } from "@/shared/api-utils";
+
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
 type ResumeRow = {
   id: string;
@@ -115,7 +118,7 @@ async function loadAuthorizedResume(resumeId: string, hrId: string) {
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`resume:view:${ip}`, 30, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -126,6 +129,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const { id: resumeId } = await context.params;
+    assertUuid(resumeId, "Resume");
     const { resume, linkedApplications, viewUrl } = await loadAuthorizedResume(resumeId, guard.user.id);
 
     return apiResponse(
@@ -156,7 +160,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`resume:delete:${ip}`, 10, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -167,6 +171,7 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     }
 
     const { id: resumeId } = await context.params;
+    assertUuid(resumeId, "Resume");
     const { resume, applications, linkedApplications } = await loadAuthorizedResume(resumeId, guard.user.id);
 
     const cleanupWarnings: string[] = [];

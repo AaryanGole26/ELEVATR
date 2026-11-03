@@ -27,9 +27,13 @@ export async function createInterviewReportPdf(input: {
     }
   };
 
+  // The standard PDF fonts only cover WinAnsi and throw on anything else, which would abort the
+  // whole report for a single emoji or non-Latin name.
   const cleanText = (text: string) => {
     if (!text) return "";
-    return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+    return String(text)
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/[^\x20-\x7E\xA0-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]/g, "");
   };
 
   const drawWrappedText = (rawText: string, x: number, size: number, maxWidth: number, lineHeight: number, useBold = false, color = rgb(0, 0, 0)) => {
@@ -90,8 +94,8 @@ export async function createInterviewReportPdf(input: {
   page.drawText(audience === "hr" ? "Candidate Information" : "Interview Summary", { x: 40, y, size: 14, font: bold });
   y -= 25;
   const info = [
-    `Email: ${input.candidateEmail || "Guest User"}`,
-    `Pipeline: ${input.pipelineTitle}`,
+    `Email: ${cleanText(input.candidateEmail || "") || "Guest User"}`,
+    `Pipeline: ${cleanText(input.pipelineTitle)}`,
     `Application ID: ${input.applicationId.slice(0, 8)}...`,
     `Interview Date: ${new Date().toLocaleDateString()}`
   ];
@@ -119,7 +123,12 @@ export async function createInterviewReportPdf(input: {
   }
 
   // Overall Score Section
-  if (evaluation.overallScore !== undefined) {
+  if (typeof evaluation.overallScore !== "number") {
+    page.drawText("Evaluation pending", { x: 40, y, size: 14, font: bold });
+    y -= 18;
+    page.drawText("The interview was recorded. The AI evaluation will be added when it completes.", { x: 40, y, size: 10, font });
+    y -= 30;
+  } else {
     page.drawText("Overall Evaluation Score", { x: 40, y, size: 14, font: bold });
     y -= 30;
     
@@ -136,7 +145,7 @@ export async function createInterviewReportPdf(input: {
   }
 
   // KPI Breakdown - show to all audiences
-  if (evaluation.kpis) {
+  if (evaluation.kpis && Object.keys(evaluation.kpis).length > 0) {
     page.drawText("KPI Breakdown", { x: 40, y, size: 14, font: bold });
     y -= 25;
 
@@ -175,15 +184,13 @@ export async function createInterviewReportPdf(input: {
   y -= 20;
 
   // Strengths & Weaknesses
-  if (evaluation.strengths || evaluation.weaknesses) {
+  if (evaluation.strengths?.length || evaluation.weaknesses?.length) {
+    ensureSpace(120);
     const startY = y;
     if (evaluation.strengths) {
       page.drawText("Key Strengths", { x: 40, y, size: 12, font: bold });
       y -= 15;
-      evaluation.strengths.slice(0, 4).forEach(s => {
-        page.drawText(`• ${cleanText(s)}`, { x: 45, y, size: 9, font });
-        y -= 12;
-      });
+      evaluation.strengths.slice(0, 4).forEach((s) => drawWrappedText(`\u2022 ${s}`, 45, 9, 235, 12));
     }
     
     // Check if we need to reset Y for weaknesses if they're side-by-side
@@ -192,10 +199,7 @@ export async function createInterviewReportPdf(input: {
     if (evaluation.weaknesses) {
       page.drawText("Areas for Improvement", { x: 300, y, size: 12, font: bold });
       y -= 15;
-      evaluation.weaknesses.slice(0, 4).forEach(w => {
-        page.drawText(`• ${cleanText(w)}`, { x: 305, y, size: 9, font });
-        y -= 12;
-      });
+      evaluation.weaknesses.slice(0, 4).forEach((w) => drawWrappedText(`\u2022 ${w}`, 305, 9, 250, 12));
     }
     y = Math.min(strengthsEndY, y) - 20;
   }
@@ -226,7 +230,7 @@ export async function createInterviewReportPdf(input: {
         y -= 5;
       }
     } else if (typeof evaluation.transcript === 'string') {
-      const lines = evaluation.transcript.split('\n');
+      const lines = (evaluation.transcript as string).split('\n');
       for (const line of lines) {
         ensureSpace(90, "Transcript (continued)");
         drawWrappedText(line, 40, 9, 490, 11);
