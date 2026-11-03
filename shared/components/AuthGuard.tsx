@@ -1,8 +1,9 @@
 'use client';
 
-import { useAuth } from '@/shared/auth-context';
-import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '@/shared/auth-context';
+import { LoadingState } from '@/shared/components/ui';
 import type { UserRole } from '@/shared/types';
 
 interface AuthGuardProps {
@@ -10,36 +11,24 @@ interface AuthGuardProps {
   requiredRole?: UserRole;
 }
 
+/** Page-level navigation guard. API routes enforce access independently on the server. */
 export function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, role, loading } = useAuth();
-  const roleAllowed = !requiredRole || role === requiredRole || (requiredRole === 'candidate' && role === null);
+  const roleAllowed = !requiredRole || role === requiredRole;
 
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        router.push('/login');
-      } else if (!roleAllowed) {
-        router.push('/');
-      }
+    if (loading) return;
+    if (!user) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}` as never);
+    } else if (!roleAllowed) {
+      router.replace(role === 'hr' ? '/hr' : '/dashboard');
     }
-  }, [user, loading, roleAllowed, router]);
+  }, [user, role, loading, roleAllowed, router, pathname]);
 
-  if (loading) {
-    return (
-      <div className="loading-page">
-        <div className="spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  if (!roleAllowed) {
-    return null;
+  if (loading || !user || !roleAllowed) {
+    return <LoadingState />;
   }
 
   return <>{children}</>;

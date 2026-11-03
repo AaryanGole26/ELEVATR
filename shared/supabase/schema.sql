@@ -64,17 +64,9 @@ drop policy if exists users_self_select on public.users;
 create policy users_self_select on public.users
 for select using (auth.uid() = id);
 
-drop policy if exists users_self_update on public.users;
-create policy users_self_update on public.users
-for update using (auth.uid() = id);
-
 drop policy if exists pipelines_hr_manage on public.pipelines;
 create policy pipelines_hr_manage on public.pipelines
 for all using (auth.uid() = hr_id) with check (auth.uid() = hr_id);
-
-drop policy if exists resumes_owner_or_guest_insert on public.resumes;
-create policy resumes_owner_or_guest_insert on public.resumes
-for insert with check (auth.uid() = user_id or user_id is null);
 
 drop policy if exists resumes_owner_select on public.resumes;
 create policy resumes_owner_select on public.resumes
@@ -84,10 +76,6 @@ drop policy if exists applications_owner_select on public.applications;
 create policy applications_owner_select on public.applications
 for select using (auth.uid() = candidate_id);
 
-drop policy if exists applications_owner_insert on public.applications;
-create policy applications_owner_insert on public.applications
-for insert with check (auth.uid() = candidate_id or candidate_id is null);
-
 insert into storage.buckets (id, name, public)
-values ('reports', 'reports', true)
+values ('reports', 'reports', false)
 on conflict (id) do nothing;

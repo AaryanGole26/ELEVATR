@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getBackendBaseUrl } from '@/lib/api';
 // Vite/ESM: use import.meta.env for environment vars in the browser.
 // If no env var is set, default to local backend (common FastAPI port).
-const API_ORIGIN: string =
-  (import.meta.env.VITE_API_ORIGIN as string) ||
-  (import.meta.env.REACT_APP_API_ORIGIN as string) ||
-  'http://localhost:8000';
+const API_ORIGIN: string = getBackendBaseUrl();
 
 const getAuthHeaders = () => {
   try {

@@ -15,43 +15,11 @@ export type AnalyzeResumeResponse = {
   result: AnalysisResult;
 };
 
-// Backend URL configuration with fallbacks
-const getBackendUrl = () => {
-  // Check for environment variable first
-  if (import.meta.env.VITE_BACKEND_URL) {
-    return import.meta.env.VITE_BACKEND_URL;
-  }
-  
-  // Check if we're in development mode
-  if (import.meta.env.DEV) {
-    return "http://127.0.0.1:8000";
-  }
-  
-  // Production fallback
-  return "https://optiresume-aidrivenresumeoptimizationandcare-production.up.railway.app";
-};
-
-const DEFAULT_BASE_URL = getBackendUrl();
+// Set VITE_BACKEND_URL for deployed environments. The local default only applies in development.
+const DEFAULT_BASE_URL: string =
+  import.meta.env.VITE_BACKEND_URL || (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 
 export const getBackendBaseUrl = () => DEFAULT_BASE_URL.replace(/\/$/, "");
-
-const getAuthToken = () => {
-  try {
-    const raw = window.localStorage.getItem('elevatr-auth-session');
-    if (!raw) {
-      return null;
-    }
-    const session = JSON.parse(raw) as { token?: string };
-    return session.token || null;
-  } catch {
-    return null;
-  }
-};
-
-const getAuthHeaders = () => {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}`, 'X-Auth-Token': token } : {};
-};
 
 export async function analyzeResume(params: {
   file: File;
@@ -68,15 +36,9 @@ export async function analyzeResume(params: {
   const base = getBackendBaseUrl();
   const url = base ? `${base}/analyze-resume` : "/analyze-resume";
   
-  console.log("Attempting to connect to:", url);
-  console.log("Backend base URL:", base);
-  
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: {
-        ...getAuthHeaders(),
-      },
       body: form,
     });
 
@@ -95,19 +57,16 @@ export async function analyzeResume(params: {
   }
 }
 
-export async function exportPdf(result?: any, resumeData?: any): Promise<Blob> {
+export async function exportPdf(result: AnalysisResult): Promise<Blob> {
   const base = getBackendBaseUrl();
   const url = base ? `${base}/export-pdf` : "/export-pdf";
-  
-  console.log("Exporting PDF from:", url);
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
     },
-    body: JSON.stringify({ result, resumeData, title: "Resume Analysis" }),
+    body: JSON.stringify({ result, title: "Resume Analysis" }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -122,8 +81,6 @@ export async function exportPdf(result?: any, resumeData?: any): Promise<Blob> {
 export async function listTemplates(): Promise<{ templates: string[] }> {
   const base = getBackendBaseUrl();
   const url = base ? `${base}/templates` : "/templates";
-  
-  console.log("Fetching templates from:", url);
   
   const res = await fetch(url);
   if (!res.ok) {
@@ -140,8 +97,6 @@ export async function uploadResume(file: File): Promise<any> {
   
   const base = getBackendBaseUrl();
   const url = base ? `${base}/upload_resume` : "/upload_resume";
-  
-  console.log("Uploading resume to:", url);
   
   const res = await fetch(url, {
     method: "POST",
@@ -164,8 +119,6 @@ export async function generateResume(data: {
   const base = getBackendBaseUrl();
   const url = base ? `${base}/generate_resume` : "/generate_resume";
   
-  console.log("Generating resume from:", url);
-  
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -180,20 +133,15 @@ export async function generateResume(data: {
   return data.format === "pdf" ? res.blob() : res.text();
 }
 
-
-export async function uploadResumeByPath(filePath: string): Promise<any> {
-  const base = getBackendBaseUrl();
-  const url = base ? `${base}/upload_resume_path` : "/upload_resume_path";
-  const res = await fetch(url, {
+export async function sendChatMessage(messages: Array<{ role: string; content: string }>): Promise<string> {
+  const res = await fetch(`${getBackendBaseUrl()}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_path: filePath }),
+    body: JSON.stringify({ messages }),
   });
+  const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Upload-by-path failed (${res.status}): ${text || res.statusText}`);
+    throw new Error(data?.error || "The assistant is unavailable right now.");
   }
-  return res.json();
+  return data.reply;
 }
-
-

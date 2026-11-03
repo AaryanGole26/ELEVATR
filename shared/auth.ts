@@ -1,3 +1,4 @@
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
 import { supabaseAdmin } from "@/shared/supabase/admin";
 import type { UserRole } from "@/shared/types";
@@ -8,55 +9,45 @@ export async function getCurrentUser() {
   if (error || !data.user) {
     return null;
   }
-
   return data.user;
 }
 
-export async function getCurrentRole(userId: string): Promise<UserRole | null> {
-  const { data, error } = await supabaseAdmin.from("users").select("role").eq("id", userId).maybeSingle();
-  if (data?.role === "candidate" || data?.role === "hr") {
-    return data.role as UserRole;
-  }
+/**
+ * public.users is the only source of truth for a role. user_metadata can be edited by the user
+ * through the public auth API, so it is consulted once only: to create a missing row.
+ */
+export async function getCurrentRole(user: User): Promise<UserRole | null> {
+  const { data, error } = await supabaseAdmin.from("users").select("role").eq("id", user.id).maybeSingle();
 
   if (error) {
-    console.warn("Falling back to auth metadata for role lookup:", error.message);
-  }
-
-  const supabase = await createClient();
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData.user) {
+    console.error("Role lookup failed:", error.message);
     return null;
   }
 
-  const rawRole = userData.user.user_metadata?.role || "candidate";
-  return rawRole === "candidate" || rawRole === "hr" ? rawRole : null;
+  if (data?.role === "candidate" || data?.role === "hr") {
+    return data.role;
+  }
+
+  return ensurePublicUserRow(user);
 }
 
-async function ensurePublicUserRow(user: { id: string; email?: string | null; user_metadata?: { role?: unknown } }) {
-  const role = user.user_metadata?.role || "candidate";
-  if (role !== "candidate" && role !== "hr") {
-    return null;
-  }
+async function ensurePublicUserRow(user: User): Promise<UserRole | null> {
+  if (!user.email) return null;
 
-  const email = user.email;
-  if (!email) {
-    return role as UserRole;
-  }
-
+  const role: UserRole = user.user_metadata?.role === "hr" ? "hr" : "candidate";
   const { error } = await supabaseAdmin.from("users").upsert(
-    {
-      id: user.id,
-      email,
-      role
-    },
-    { onConflict: "id" }
+    { id: user.id, email: user.email.toLowerCase(), role },
+    { onConflict: "id", ignoreDuplicates: true }
   );
 
   if (error) {
-    console.warn("Failed to backfill public.users row:", error.message);
+    console.error("Failed to create public.users row:", error.message);
+    return null;
   }
 
-  return role as UserRole;
+  // Re-read in case a concurrent request (or the database trigger) created it first.
+  const { data } = await supabaseAdmin.from("users").select("role").eq("id", user.id).maybeSingle();
+  return data?.role === "candidate" || data?.role === "hr" ? data.role : null;
 }
 
 export async function requireRole(role: UserRole) {
@@ -65,7 +56,7 @@ export async function requireRole(role: UserRole) {
     return { ok: false as const, status: 401, message: "Authentication required" };
   }
 
-  const currentRole = (await getCurrentRole(user.id)) || (await ensurePublicUserRow(user));
+  const currentRole = await getCurrentRole(user);
   if (currentRole !== role) {
     return { ok: false as const, status: 403, message: "Forbidden for this role" };
   }

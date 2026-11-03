@@ -173,3 +173,14 @@ generate_pdfs.py
 !scripts/debug-schema.js
 !start-all.bat
 !README.md
+
+# Generated at runtime by the interview service; contains interview content
+ai-video-interviewer/static/audio/
+
+# Local Supabase state and end-to-end test output
+supabase/.branches/
+supabase/.temp/
+test-results/
+playwright-report/
+
+*.tsbuildinfo

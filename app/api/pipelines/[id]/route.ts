@@ -2,7 +2,11 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiResponse, apiError, rateLimit, parseRequestBody } from "@/shared/api-utils";
+import { APIError, apiResponse, apiError, assertUuid, rateLimit, parseRequestBody, getClientIp } from "@/shared/api-utils";
+import { readInterviewScore, reportRoute } from "@/shared/interviews";
+
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
 const updatePipelineSchema = z.object({
   job_title: z.string().min(3, "Job title must be at least 3 characters").max(100, "Job title must be less than 100 characters"),
@@ -12,44 +16,9 @@ const updatePipelineSchema = z.object({
   is_active: z.boolean().optional()
 });
 
-function readInterviewScore(resultJson: unknown): number | null {
-  if (!resultJson || typeof resultJson !== "object") {
-    return null;
-  }
-
-  const payload = resultJson as Record<string, unknown>;
-  const candidates = [payload.overall_score, payload.overallScore, payload.score, payload.final_score];
-  for (const value of candidates) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, Math.min(100, Math.round(value)));
-    }
-  }
-
-  return null;
-}
-
-function readReportUrl(resultJson: unknown, preferredAudience: "hr" | "candidate" = "hr"): string | null {
-  if (!resultJson || typeof resultJson !== "object") {
-    return null;
-  }
-
-  const payload = resultJson as Record<string, unknown>;
-  const reportUrls = payload.report_urls && typeof payload.report_urls === "object"
-    ? (payload.report_urls as Record<string, unknown>)
-    : null;
-
-  const primary = preferredAudience === "candidate" ? reportUrls?.candidate : reportUrls?.hr;
-  if (typeof primary === "string" && primary.trim()) {
-    return primary;
-  }
-
-  const legacy = preferredAudience === "candidate" ? payload.candidate_report_pdf_url : payload.report_pdf_url;
-  return typeof legacy === "string" && legacy.trim() ? legacy : null;
-}
-
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`pipeline:detail:${ip}`, 50, 60000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
@@ -60,10 +29,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const { id: pipelineId } = await context.params;
+    assertUuid(pipelineId, "Pipeline");
 
     const { data: pipeline, error: pipelineErr } = await supabaseAdmin
       .from("pipelines")
-      .select("id, hr_id, title, jd_text, tags, threshold, created_at")
+      .select("id, hr_id, title, jd_text, tags, threshold, is_active, created_at")
       .eq("id", pipelineId)
       .eq("hr_id", guard.user.id)
       .maybeSingle();
@@ -78,7 +48,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
     const { data: applications, error: appErr } = await supabaseAdmin
       .from("applications")
-      .select("id, candidate_id, resume_id, status, score, created_at")
+      .select("id, candidate_id, resume_id, status, score, email, last_notified_status, last_notified_at, created_at")
       .eq("pipeline_id", pipelineId)
       .order("created_at", { ascending: false });
 
@@ -106,7 +76,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const applicationIds = (applications || []).map((app) => app.id);
     const { data: interviews } = await supabaseAdmin
       .from("interviews")
-      .select("id, application_id, result_json, report_pdf_url, created_at")
+      .select("id, application_id, result_json, report_pdf_url, interview_status, is_used, created_at")
       .in("application_id", applicationIds)
       .order("created_at", { ascending: false });
 
@@ -114,10 +84,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const userEmailMap = new Map((users || []).map((user) => [user.id, user.email]));
     const latestInterviewByApplication = new Map<string, {
       id: string;
-      report_pdf_url: string | null;
-      candidate_report_pdf_url: string | null;
+      report_url: string | null;
       score: number | null;
       recommendation: "selected" | "pending";
+      completed: boolean;
       created_at: string;
     }>();
 
@@ -129,8 +99,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       const score = readInterviewScore(interview.result_json);
       latestInterviewByApplication.set(interview.application_id, {
         id: interview.id,
-        report_pdf_url: interview.report_pdf_url || readReportUrl(interview.result_json, "hr"),
-        candidate_report_pdf_url: readReportUrl(interview.result_json, "candidate"),
+        report_url: interview.report_pdf_url ? reportRoute(interview.id, "hr") : null,
+        completed: !!interview.is_used,
         score,
         recommendation: score !== null && score >= 70 ? "selected" : "pending",
         created_at: interview.created_at
@@ -147,14 +117,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       return {
         ...app,
         resume_id: app.resume_id,
-        email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || resumeEmail || "Guest candidate",
-        email_source: app.candidate_id ? "dashboard" : resumeEmail ? "resume" : "manual",
+        email: (app.candidate_id ? userEmailMap.get(app.candidate_id) : null) || app.email || resumeEmail || "",
+        email_source: app.candidate_id ? "dashboard" : resumeEmail || app.email ? "resume" : "manual",
         resume_preview: resumeText.slice(0, 220),
         resume_length: resumeText.length,
         latest_interview_id: latestInterview?.id || null,
         latest_interview_score: latestInterview?.score ?? null,
         latest_interview_recommendation: latestInterview?.recommendation || null,
-        latest_report_pdf_url: latestInterview?.candidate_report_pdf_url || latestInterview?.report_pdf_url || null,
+        latest_report_pdf_url: latestInterview?.report_url || null,
+        interview_completed: latestInterview?.completed || false,
         latest_interview_at: latestInterview?.created_at || null
       };
     });
@@ -164,15 +135,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         ? Math.round((scored.reduce((sum, app) => sum + (app.score || 0), 0) / scored.length) * 100) / 100
         : 0;
 
-    const shortlisted = rows.filter((app) => ["shortlisted", "interview", "selected"].includes(app.status || "")).length;
+    const shortlisted = rows.filter((app) => ["shortlisted", "interview", "interviewed", "selected"].includes(app.status || "")).length;
 
     return apiResponse(
       true,
       {
         pipeline: {
           ...pipeline,
-          job_title: pipeline.title,
-          is_active: (pipeline as any).is_active ?? true
+          job_title: pipeline.title
         },
         applications: rows,
         stats: {
@@ -191,7 +161,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`pipeline:update:${ip}`, 20, 60000)) {
       throw new APIError(429, "Too many update requests. Please try again later.");
     }
@@ -202,6 +172,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const { id: pipelineId } = await context.params;
+    assertUuid(pipelineId, "Pipeline");
     const body = await parseRequestBody(request);
     const parsed = updatePipelineSchema.safeParse(body);
 
@@ -211,20 +182,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       });
     }
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       title: parsed.data.job_title,
       jd_text: parsed.data.jd_text,
       tags: parsed.data.tags,
       threshold: parsed.data.threshold
     };
-    /* is_active toggle disabled temporarily to fix 500 */
+    if (parsed.data.is_active !== undefined) payload.is_active = parsed.data.is_active;
 
     const { data: updatedPipeline, error } = await supabaseAdmin
       .from("pipelines")
       .update(payload)
       .eq("id", pipelineId)
       .eq("hr_id", guard.user.id)
-      .select("id, title, jd_text, tags, threshold, created_at")
+      .select("id, title, jd_text, tags, threshold, is_active, created_at")
       .maybeSingle();
 
     if (error) {
@@ -240,8 +211,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       {
         pipeline: {
           ...updatedPipeline,
-          job_title: (updatedPipeline as any).title,
-          is_active: (updatedPipeline as any).is_active ?? true
+          job_title: updatedPipeline.title
         }
       },
       "Pipeline updated successfully",

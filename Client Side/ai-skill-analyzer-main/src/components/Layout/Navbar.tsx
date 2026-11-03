@@ -15,6 +15,8 @@ const Navbar = () => {
     { name: 'About', path: '/about' },
     { name: 'Contact', path: '/contact' },
   ];
+  // Returns to the hiring platform, so the two apps feel like one product.
+  const mainAppUrl = import.meta.env.VITE_MAIN_APP_URL || 'http://localhost:3000';
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -36,7 +38,7 @@ const Navbar = () => {
   }, [location.pathname]);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/60 backdrop-blur-xl backdrop-saturate-150 border-b border-border/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
 
@@ -66,6 +68,9 @@ const Navbar = () => {
                 {item.name}
               </Link>
             ))}
+            <a href={`${mainAppUrl}/dashboard`} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors duration-200">
+              My dashboard
+            </a>
           </div>
 
           {/* Desktop CTA — Dropdown */}
@@ -162,6 +167,9 @@ const Navbar = () => {
                   {item.name}
                 </Link>
               ))}
+              <a href={`${mainAppUrl}/dashboard`} className="px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200">
+                My dashboard
+              </a>
 
               <div className="pt-3 border-t border-border mt-2 space-y-2">
                 <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">

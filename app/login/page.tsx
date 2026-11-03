@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/shared/auth-context';
+import { Alert, LoadingState } from '@/shared/components/ui';
+
+/** Only same-site paths are allowed: "//evil.com" also starts with "/" but leaves the site. */
+function safeNextPath(value: string | null): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null;
+  return value;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,93 +18,54 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      const searchParams = new URL(window.location.href).searchParams;
-      const nextUrl = searchParams.get('next');
-      if (nextUrl && nextUrl.startsWith('/')) {
-        router.replace(nextUrl as any);
-      } else {
-        router.replace(role === 'hr' ? '/hr' : '/dashboard');
-      }
-    }
+    if (!user) return;
+    const next = safeNextPath(new URL(window.location.href).searchParams.get('next'));
+    router.replace((next ?? (role === 'hr' ? '/hr' : '/dashboard')) as never);
   }, [user, role, router]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
-    setIsLoading(true);
-
+    setSubmitting(true);
     try {
-      if (!email || !password) {
-        throw new Error('Please fill in all fields');
-      }
-
-      await signIn(email, password);
+      await signIn(email.trim(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Login failed.');
     } finally {
-      setIsLoading(false);
+      setSubmitting(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="form-container">
-        <div className="spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
+  if (loading || user) return <LoadingState />;
 
   return (
-    <div className="form-container">
-      <div className="form-card">
-        <h1>Login</h1>
-        <p className="form-subtitle">Sign in to your ELEVATR account</p>
+    <div className="focus-page page-enter">
+      <div className="card focus-card">
+        <h1>Welcome back</h1>
+        <p className="form-subtitle">Sign in to your ELEVATR account.</p>
 
-        {error && <div className="error-box">{error}</div>}
+        {error && <Alert>{error}</Alert>}
 
         <form onSubmit={handleSubmit} className="form">
           <div className="form-group">
             <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              disabled={isLoading}
-              required
-            />
+            <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" disabled={submitting} required />
           </div>
-
           <div className="form-group">
             <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              disabled={isLoading}
-              required
-            />
+            <input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={submitting} required />
           </div>
-
-          <button type="submit" disabled={isLoading} className="btn btn-primary">
-            {isLoading ? 'Signing in...' : 'Sign In'}
+          <button type="submit" disabled={submitting} className="btn btn-block">
+            {submitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
 
         <div className="form-footer">
-          <p><Link href="/forgot-password">Forgot Password?</Link></p>
-        </div>
-
-        <div className="form-footer">
-          <p>Don't have an account? <Link href="/signup">Sign up</Link></p>
+          <p><Link href="/forgot-password">Forgot your password?</Link></p>
+          <p>New to ELEVATR? <Link href="/signup">Create an account</Link></p>
         </div>
       </div>
     </div>

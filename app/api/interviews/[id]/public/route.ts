@@ -1,100 +1,61 @@
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/shared/supabase/admin";
-import { APIError, apiError, apiResponse, rateLimit } from "@/shared/api-utils";
+import { APIError, apiError, apiResponse, assertUuid, getClientIp, rateLimit } from "@/shared/api-utils";
+import { isExpired, tokensMatch } from "@/shared/interview-security";
 
-function isMissingColumnError(error: unknown, column: string): boolean {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-  const message = (error as { message?: string }).message || "";
-  return message.includes(`Could not find the '${column}' column`);
-}
+// Per-user data: never pre-render or cache this route.
+export const dynamic = "force-dynamic";
 
+type InterviewLinkState = "ready" | "in_progress" | "completed" | "expired" | "closed";
+
+/**
+ * GET /api/interviews/[id]/public?token=...
+ * Candidate entry point: a valid token is the credential. Returns only what the interview page
+ * shows. A wrong token gets the same 404 as an unknown id, so ids can't be probed.
+ */
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
-    if (!rateLimit(`interview:public:${ip}`, 60, 60000)) {
+    if (!rateLimit(`interview:public:${getClientIp(request)}`, 60, 60_000)) {
       throw new APIError(429, "Too many requests. Please try again later.");
     }
 
     const { id: interviewId } = await context.params;
+    assertUuid(interviewId, "Interview");
     const token = (request.nextUrl.searchParams.get("token") || "").trim();
 
-    // Minimal interview fetch - just get what we need
-    const { data: interview, error: interviewErr } = await supabaseAdmin
+    const { data: interview, error } = await supabaseAdmin
       .from("interviews")
-      .select("*")
+      .select("id, application_id, interview_token, expires_at, is_used, interview_status, config, applications!inner(status, pipelines!inner(title))")
       .eq("id", interviewId)
       .maybeSingle();
 
-    if (interviewErr || !interview) {
-      throw new APIError(404, "Interview not found");
+    if (error) throw new APIError(500, "Failed to load interview", { details: error.message });
+
+    if (!interview || !tokensMatch(token, interview.interview_token)) {
+      throw new APIError(404, "This interview link is not valid. Please use the link from your email.");
     }
 
-    // Get application - minimal fields
-    const { data: application } = await supabaseAdmin
-      .from("applications")
-      .select("*")
-      .eq("id", interview.application_id)
-      .maybeSingle();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const application = interview.applications as any;
+    const status = application?.status as string | undefined;
 
-    // Check if interview has already been used
-    if (interview.is_used) {
-      throw new Error("This interview link has already been used and cannot be accessed again. Please contact the hiring team if you need to retake the interview.");
-    }
+    let state: InterviewLinkState = "ready";
+    if (interview.is_used || interview.interview_status === "completed") state = "completed";
+    else if (status === "rejected") state = "closed";
+    else if (isExpired(interview.expires_at)) state = "expired";
+    else if (interview.interview_status === "in_progress") state = "in_progress";
 
-    if (application?.status === "rejected") {
-      throw new Error("This interview link is no longer active as your application status has been updated. Please contact the hiring team for more information.");
-    }
+    const config = (interview.config || {}) as { durationMinutes?: number; maxQuestions?: number };
 
-    // Get resume - minimal fields
-    const { data: resume } = application?.resume_id
-      ? await supabaseAdmin
-          .from("resumes")
-          .select("*")
-          .eq("id", application.resume_id)
-          .maybeSingle()
-      : { data: null };
-
-    // Get user email
-    const { data: user } = application?.candidate_id
-      ? await supabaseAdmin
-          .from("users")
-          .select("email")
-          .eq("id", application.candidate_id)
-          .maybeSingle()
-      : { data: null };
-
-    // Get pipeline
-    const { data: pipeline } = application?.pipeline_id
-      ? await supabaseAdmin
-          .from("pipelines")
-          .select("*")
-          .eq("id", application.pipeline_id)
-          .maybeSingle()
-      : { data: null };
-
-    // Build safe response
-    const responseData = {
-      interview: interview || {},
-      application: application ? { ...application, email: user?.email || "" } : null,
-      resume: resume || null,
-      pipeline: pipeline || null
-    };
-
-    return new Response(JSON.stringify({ success: true, data: responseData }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
+    return apiResponse(true, {
+      state,
+      interview_id: interview.id,
+      expires_at: interview.expires_at,
+      pipeline_title: application?.pipelines?.title || "Interview",
+      max_questions: config.maxQuestions ?? 8,
+      duration_minutes: config.durationMinutes ?? 20
     });
   } catch (error) {
-    console.error("Interview public endpoint error:", error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(
-      JSON.stringify({ success: false, message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      }
-    );
+    return apiError(error);
   }
 }

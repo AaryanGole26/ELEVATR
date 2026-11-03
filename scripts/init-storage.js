@@ -53,9 +53,9 @@ async function initStorage() {
   // 2. Create 'reports' bucket
   const reportsBucket = buckets.find(b => b.name === 'reports');
   if (!reportsBucket) {
-    console.log("Creating 'reports' bucket (public)...");
+    console.log("Creating 'reports' bucket (private)...");
     const { data, error } = await supabase.storage.createBucket('reports', {
-      public: true,
+      public: false,
       fileSizeLimit: 10485760, // 10MB
       allowedMimeTypes: ['application/pdf']
     });

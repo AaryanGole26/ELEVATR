@@ -1,18 +1,17 @@
 import { requireRole } from "@/shared/auth";
 import { supabaseAdmin } from "@/shared/supabase/admin";
 import { analyzeResumeAgainstJd } from "@/ai/screening/resumeAnalyzer";
-import pdfParse from "pdf-parse";
-import { APIError, apiResponse, apiError, rateLimit } from "@/shared/api-utils";
+import { extractPdfText, looksLikePdf, MAX_RESUME_BYTES } from "@/shared/pdf";
+import { APIError, apiResponse, apiError, assertUuid, rateLimit, getClientIp } from "@/shared/api-utils";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_FILES = 100;
 const PDF_MIME = "application/pdf";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     if (!rateLimit(`pipeline:batch:${ip}`, 4, 60000)) {
       throw new APIError(429, "Too many batch requests. Please try again in a minute.");
     }
@@ -23,6 +22,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const { id: pipelineId } = await context.params;
+    assertUuid(pipelineId, "Pipeline");
 
     const { data: pipeline, error: pipelineErr } = await supabaseAdmin
       .from("pipelines")
@@ -63,27 +63,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           throw new Error(`Unsupported file type: ${file.type || "unknown"}. Only PDF is allowed.`);
         }
 
-        if (file.size > MAX_FILE_SIZE) {
+        if (file.size > MAX_RESUME_BYTES) {
           throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max is 5MB.`);
         }
 
-        // Timer/Delay to avoid overwhelming the server
-        if (i > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
+        const pdfBuffer = Buffer.from(await file.arrayBuffer());
+        if (!looksLikePdf(pdfBuffer)) {
+          throw new Error("This file is not a valid PDF.");
         }
-
-        const fileBuffer = await file.arrayBuffer();
-        
-        // Ensure resumes bucket exists (robust recovery)
-        const { data: bucketCheck } = await supabaseAdmin.storage.getBucket("resumes");
-        if (!bucketCheck) {
-          console.log("Bucket 'resumes' not detected at runtime, attempting auto-creation...");
-          await supabaseAdmin.storage.createBucket("resumes", { public: false });
-        }
-
-        const pdfBuffer = Buffer.from(fileBuffer);
-        const parsedPdf = await pdfParse(pdfBuffer);
-        const resumeText = (parsedPdf.text || "").trim();
+        const resumeText = await extractPdfText(pdfBuffer);
 
         // Simple email extraction
         const emailMatch = resumeText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
@@ -97,29 +85,28 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const status = (result.score || 0) >= pipeline.threshold ? "shortlisted" : "screened";
 
         // Upload to Storage
-        const timestamp = Date.now();
-        const storagePath = `batch/${pipelineId}/${timestamp}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const storagePath = `batch/${pipelineId}/${crypto.randomUUID()}.pdf`;
         
         const { error: uploadErr } = await supabaseAdmin.storage
           .from("resumes")
-          .upload(storagePath, fileBuffer, {
+          .upload(storagePath, pdfBuffer, {
             contentType: PDF_MIME,
-            upsert: true
+            upsert: false
           });
 
         if (uploadErr) {
           console.error("Storage upload error:", uploadErr);
-          // We continue but log it; the DB record will lack a storage path if we don't throw here
-          // For batch, we probably want to throw and catch to record the failure
-          throw new Error(`Failed to upload to storage: ${uploadErr.message}`);
+          throw new Error("Could not store this file.");
         }
 
-        // Store metadata in DB - using extremely minimal columns for maximum schema compatibility
         const { data: resumeRow, error: resumeErr } = await supabaseAdmin
           .from("resumes")
           .insert({
             content: resumeText,
             storage_path: storagePath,
+            file_name: file.name,
+            file_type: PDF_MIME,
+            file_size: file.size,
             metadata: {
               email: extractedEmail,
               file_name: file.name,
@@ -132,8 +119,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
         if (resumeErr || !resumeRow) {
           // Cleanup storage if DB fails
-          await supabaseAdmin.storage.from("resumes").remove([storagePath]).catch(() => {});
-          throw new Error(resumeErr?.message || "Failed to store resume record");
+          await supabaseAdmin.storage.from("resumes").remove([storagePath]).catch(() => undefined);
+          console.error("Resume insert failed:", resumeErr);
+          throw new Error("Could not save this resume.");
         }
 
         const { error: appErr } = await supabaseAdmin
@@ -142,12 +130,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             pipeline_id: pipeline.id,
             candidate_id: null,
             resume_id: resumeRow.id,
+            email: extractedEmail,
             score: result.score || 0,
             status
           });
 
         if (appErr) {
-          throw new Error(appErr.message || "Failed to create application");
+          console.error("Application insert failed:", appErr);
+          throw new Error("Could not create the application.");
         }
 
         created += 1;
